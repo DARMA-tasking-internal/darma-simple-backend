@@ -50,21 +50,76 @@
 namespace simple_backend {
 
 struct ControlBlock {
-  ControlBlock(
-    std::shared_ptr<darma_runtime::abstract::frontend::Handle const> in_handle
-  ) : handle(in_handle) {
-    data = ::operator new(in_handle->get_serialization_manager()->get_metadata_size());
-    // TODO we could delay this
-    handle->get_serialization_manager()->default_construct(data);
+  protected:
+
+    // Called from CollectionControlBlock
+    ControlBlock(
+      std::shared_ptr<darma_runtime::abstract::frontend::Handle const> in_handle,
+      std::size_t /* ignored */
+    ) : handle(in_handle), owns_data(true)
+    { }
+
+  public:
+
+    ControlBlock() : handle(nullptr), owns_data(false) { }
+    ControlBlock(
+      std::shared_ptr<darma_runtime::abstract::frontend::Handle const> in_handle
+    ) : handle(in_handle) {
+      data = ::operator new(in_handle->get_serialization_manager()->get_metadata_size());
+      // TODO we could delay this
+      handle->get_serialization_manager()->default_construct(data);
+    }
+    ControlBlock(void* in_data)
+      : handle(nullptr), data(in_data), owns_data(false)
+    { }
+
+    virtual ~ControlBlock() {
+      if(owns_data) {
+        handle->get_serialization_manager()->destroy(data);
+        ::operator delete(data);
+      }
+    }
+
+    std::shared_ptr<darma_runtime::abstract::frontend::Handle const> handle;
+    void* data = nullptr;
+    bool owns_data = true;
+};
+
+struct CollectionControlBlock : ControlBlock {
+  CollectionControlBlock(
+    std::shared_ptr<darma_runtime::abstract::frontend::Handle const> in_handle,
+    std::size_t n_idxs
+  ) : ControlBlock(in_handle, n_idxs),
+      n_indices(n_idxs)
+  {
+    auto ser_man = in_handle->get_serialization_manager();
+    auto md_size = ser_man->get_metadata_size();
+    data = ::operator new(n_indices * md_size);
+
+    // TODO don't construct everything here
+    for(int i = 0; i < n_indices; ++i) {
+      ser_man->default_construct(static_cast<char*>(data) + i*md_size);
+    }
   }
 
-  ~ControlBlock() {
-    handle->get_serialization_manager()->destroy(data);
-    ::operator delete(data);
+  void* data_for_index(size_t index) {
+    return static_cast<char*>(data)
+      + index * handle->get_serialization_manager()->get_metadata_size();
   }
 
-  std::shared_ptr<darma_runtime::abstract::frontend::Handle const> handle;
-  void* data = nullptr;
+  virtual ~CollectionControlBlock() {
+    if(owns_data) {
+      auto ser_man = handle->get_serialization_manager();
+      auto md_size = ser_man->get_metadata_size();
+      for(int i = 0; i < n_indices; ++i) {
+        ser_man->destroy(static_cast<char*>(data) + i*md_size);
+      }
+      ::operator delete(data);
+      owns_data = false; // make sure the base class doesn't double-delete the data
+    }
+  }
+
+  size_t n_indices;
 };
 
 struct Flow {

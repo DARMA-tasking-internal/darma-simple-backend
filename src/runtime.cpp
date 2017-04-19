@@ -44,6 +44,7 @@
 
 
 #include "runtime.hpp"
+#include "flow.hpp"
 
 #include <darma/interface/frontend/top_level.h>
 
@@ -100,6 +101,19 @@ Runtime::register_task(task_unique_ptr&& task) {
 }
 
 void
+Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
+  // keep the workers from shutting down until this task is done
+  shutdown_trigger_.increment_count();
+
+  for(size_t i = 0; i < tc->size(); ++i) {
+    register_task(tc->create_task_for_index(i));
+  }
+
+  tc = nullptr;
+  shutdown_trigger_.decrement_count();
+}
+
+void
 Runtime::_spin_up_worker_threads()
 {
   workers_.reserve(nthreads_);
@@ -153,16 +167,19 @@ Runtime::register_use(use_pending_registration_t* use) {
   auto const& in_rel = use->get_in_flow_relationship();
 
   switch (in_rel.description()) {
-    case FlowRelationship::Insignificant : {
+    case FlowRelationship::Insignificant :
+    case FlowRelationship::InsignificantCollection : {
       in_flow = nullptr;
       break;
     }
-    case FlowRelationship::Same : {
+    case FlowRelationship::Same :
+    case FlowRelationship::SameCollection : {
       assert(in_rel.related_flow());
       in_flow = *in_rel.related_flow();
       break;
     }
-    case FlowRelationship::Next : {
+    case FlowRelationship::Next :
+    case FlowRelationship::NextCollection : {
       assert(in_rel.related_flow());
       in_flow = std::make_shared<Flow>(
         (*in_rel.related_flow())->control_block
@@ -176,6 +193,34 @@ Runtime::register_use(use_pending_registration_t* use) {
         1 // start with a count so we can make it ready immediately
       );
       in_flow->trigger.decrement_count();
+      break;
+    }
+    case FlowRelationship::InitialCollection : {
+      assert(in_rel.related_flow() == nullptr);
+      in_flow = std::make_shared<Flow>(
+        std::make_shared<CollectionControlBlock>(
+          use->get_handle(),
+          darma_runtime::abstract::frontend::use_cast<
+            darma_runtime::abstract::frontend::CollectionManagingUse*
+          >(use)->get_managed_collection()->size()
+        ),
+        1 // start with a count so we can make it ready immediately
+      );
+      in_flow->trigger.decrement_count();
+      break;
+    }
+    case FlowRelationship::IndexedLocal : {
+      assert(in_rel.related_flow());
+      auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(
+        (*in_rel.related_flow())->control_block
+      );
+      in_flow = std::make_shared<Flow>(
+        std::make_shared<ControlBlock>(coll_cntrl->data_for_index(in_rel.index())),
+        1 // start with a count so that the collection flow can make it ready
+      );
+      (*in_rel.related_flow())->trigger.add_action([in_flow] {
+        in_flow->trigger.decrement_count();
+      });
       break;
     }
     case FlowRelationship::Forwarding : {
@@ -202,13 +247,28 @@ Runtime::register_use(use_pending_registration_t* use) {
   auto const& anti_in_rel = use->get_anti_in_flow_relationship();
 
   switch (anti_in_rel.description()) {
-    case FlowRelationship::Insignificant : {
+    case FlowRelationship::Insignificant :
+    case FlowRelationship::InsignificantCollection : {
       anti_in_flow = nullptr;
       break;
     }
-    case FlowRelationship::Same : {
+    case FlowRelationship::Same :
+    case FlowRelationship::SameCollection : {
       assert(anti_in_rel.related_anti_flow());
       anti_in_flow = *anti_in_rel.related_anti_flow();
+      break;
+    }
+    case FlowRelationship::AntiIndexedLocal : {
+      assert(anti_in_rel.related_anti_flow());
+      // Only create an indexed local version if the collection flow isn't insignificant
+      if(*anti_in_rel.related_anti_flow()) {
+        anti_in_flow = std::make_shared<AntiFlow>(
+          1 // start with a count so that the collection flow can make it ready
+        );
+        (*anti_in_rel.related_anti_flow())->trigger.add_action([anti_in_flow] {
+            anti_in_flow->trigger.decrement_count();
+        });
+      }
       break;
     }
     default : {
@@ -235,23 +295,38 @@ Runtime::register_use(use_pending_registration_t* use) {
   std::shared_ptr<Flow> out_flow = nullptr;
 
   switch (out_rel.description()) {
-    case FlowRelationship::Insignificant : {
+    case FlowRelationship::Insignificant :
+    case FlowRelationship::InsignificantCollection : {
       use->set_out_flow(nullptr);
       break;
     }
-    case FlowRelationship::Same : {
+    case FlowRelationship::Same :
+    case FlowRelationship::SameCollection : {
       assert(out_related);
       out_flow = *out_related;
       break;
     }
-    case FlowRelationship::Next : {
+    case FlowRelationship::Next :
+    case FlowRelationship::NextCollection : {
       assert(out_related);
       out_flow = std::make_shared<Flow>((*out_related)->control_block);
       break;
     }
-    case FlowRelationship::Null : {
+    case FlowRelationship::Null :
+    case FlowRelationship::NullCollection : {
       assert(in_flow);
       out_flow = std::make_shared<Flow>(in_flow->control_block);
+      break;
+    }
+    case FlowRelationship::IndexedLocal : {
+      assert(out_related);
+      // Indexed local out doesn't need a control block
+      auto out_flow_related = *out_related;
+      out_flow_related->trigger.increment_count();
+      out_flow = std::make_shared<Flow>(std::make_shared<ControlBlock>(nullptr));
+      out_flow->trigger.add_action([out_flow_related]{
+        out_flow_related->trigger.decrement_count();
+      });
       break;
     }
     default : {
@@ -275,28 +350,44 @@ Runtime::register_use(use_pending_registration_t* use) {
   std::shared_ptr<AntiFlow> anti_out_flow = nullptr;
 
   auto const& anti_out_rel = use->get_anti_in_flow_relationship();
-  auto related_in = anti_out_rel.related_flow();
-  auto related_anti_in = anti_out_rel.related_anti_flow();
+  auto anti_out_related_flow = anti_out_rel.related_flow();
+  auto anti_out_related_anti_flow = anti_out_rel.related_anti_flow();
   if(anti_out_rel.use_corresponding_in_flow_as_related()) {
-    related_in = &in_flow;
+    anti_out_related_flow = &in_flow;
   }
   if(anti_out_rel.use_corresponding_in_flow_as_anti_related()) {
-    related_anti_in = &anti_in_flow;
+    anti_out_related_anti_flow = &anti_in_flow;
   }
 
   switch (anti_out_rel.description()) {
-    case FlowRelationship::Insignificant : {
+    case FlowRelationship::Insignificant :
+    case FlowRelationship::InsignificantCollection : {
       anti_out_flow = nullptr;
       break;
     }
-    case FlowRelationship::Same : {
+    case FlowRelationship::Same :
+    case FlowRelationship::SameCollection : {
       assert(anti_out_rel.related_anti_flow());
-      anti_out_flow = *anti_out_rel.related_anti_flow();
+      anti_out_flow = *anti_out_related_anti_flow;
       break;
     }
-    case FlowRelationship::AntiNext : {
-      assert(related_in);
+    case FlowRelationship::AntiNext :
+    case FlowRelationship::AntiNextCollection : {
+      assert(anti_out_related_flow);
       anti_out_flow = std::make_shared<AntiFlow>();
+      break;
+    }
+    case FlowRelationship::AntiIndexedLocal : {
+      assert(anti_out_related_anti_flow);
+      // Only create an indexed local version if the collection flow isn't insignificant
+      if(*anti_out_related_anti_flow) {
+        auto anti_out_flow_related = *anti_out_related_anti_flow;
+        anti_out_flow_related->trigger.increment_count();
+        anti_out_flow = std::make_shared<AntiFlow>();
+        out_flow->trigger.add_action([anti_out_flow_related] {
+          anti_out_flow_related->trigger.decrement_count();
+        });
+      }
       break;
     }
     default : {

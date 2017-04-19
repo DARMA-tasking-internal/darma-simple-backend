@@ -103,6 +103,8 @@ class Runtime
 
     void release_use(use_pending_release_t*) override;
 
+    void register_task_collection(task_collection_unique_ptr&& collection) override;
+
     void* allocate(
       size_t n_bytes,
       darma_runtime::abstract::frontend::MemoryRequirementDetails const&

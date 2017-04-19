@@ -51,4 +51,6 @@
 // But we need anti-flows
 #define _darma_has_feature_anti_flows 1
 
+#define _darma_has_feature_create_concurrent_work 1
+
 #endif //SIMPLECVBACKEND_DARMA_FEATURES_H
