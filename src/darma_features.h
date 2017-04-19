@@ -53,4 +53,6 @@
 
 #define _darma_has_feature_create_concurrent_work 1
 
+#define _darma_has_feature_publish_fetch 1
+
 #endif //SIMPLECVBACKEND_DARMA_FEATURES_H

@@ -105,6 +105,11 @@ class Runtime
 
     void register_task_collection(task_collection_unique_ptr&& collection) override;
 
+    void publish_use(
+      std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&&,
+      darma_runtime::abstract::frontend::PublicationDetails*
+    ) override;
+
     void* allocate(
       size_t n_bytes,
       darma_runtime::abstract::frontend::MemoryRequirementDetails const&

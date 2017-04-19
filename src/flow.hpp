@@ -46,8 +46,11 @@
 #define DARMASIMPLECVBACKEND_FLOW_HPP
 
 #include "trigger.hpp"
+#include "publish.hpp"
 
 namespace simple_backend {
+
+struct CollectionControlBlock;
 
 struct ControlBlock {
   protected:
@@ -65,12 +68,25 @@ struct ControlBlock {
     ControlBlock(
       std::shared_ptr<darma_runtime::abstract::frontend::Handle const> in_handle
     ) : handle(in_handle) {
-      data = ::operator new(in_handle->get_serialization_manager()->get_metadata_size());
-      // TODO we could delay this
-      handle->get_serialization_manager()->default_construct(data);
+      if(handle) {
+        data = ::operator new(in_handle->get_serialization_manager()->get_metadata_size());
+        // TODO we could delay this
+        handle->get_serialization_manager()->default_construct(data);
+      }
+      else {
+        owns_data = false;
+      }
     }
-    ControlBlock(void* in_data)
-      : handle(nullptr), data(in_data), owns_data(false)
+    // For fetching
+    ControlBlock(
+      std::shared_ptr<darma_runtime::abstract::frontend::Handle const> in_handle,
+      void* in_data
+    ) : handle(in_handle), data(in_data), owns_data(false)
+    { }
+
+    ControlBlock(void* in_data, CollectionControlBlock* parent_coll, std::size_t collection_index)
+      : handle(nullptr), data(in_data), owns_data(false),
+        parent_collection(parent_coll), collection_index(collection_index)
     { }
 
     virtual ~ControlBlock() {
@@ -83,6 +99,8 @@ struct ControlBlock {
     std::shared_ptr<darma_runtime::abstract::frontend::Handle const> handle;
     void* data = nullptr;
     bool owns_data = true;
+    CollectionControlBlock* parent_collection = nullptr;
+    std::size_t collection_index = 0;
 };
 
 struct CollectionControlBlock : ControlBlock {
@@ -107,6 +125,8 @@ struct CollectionControlBlock : ControlBlock {
       + index * handle->get_serialization_manager()->get_metadata_size();
   }
 
+
+
   virtual ~CollectionControlBlock() {
     if(owns_data) {
       auto ser_man = handle->get_serialization_manager();
@@ -120,6 +140,11 @@ struct CollectionControlBlock : ControlBlock {
   }
 
   size_t n_indices;
+  ConcurrentMap<
+    std::pair<darma_runtime::types::key_t, std::size_t>,
+    PublicationTableEntry
+  > current_published_entries;
+
 };
 
 struct Flow {

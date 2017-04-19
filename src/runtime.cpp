@@ -215,12 +215,43 @@ Runtime::register_use(use_pending_registration_t* use) {
         (*in_rel.related_flow())->control_block
       );
       in_flow = std::make_shared<Flow>(
-        std::make_shared<ControlBlock>(coll_cntrl->data_for_index(in_rel.index())),
+        std::make_shared<ControlBlock>(
+          coll_cntrl->data_for_index(in_rel.index()),
+          coll_cntrl.get(),
+          in_rel.index()
+        ),
         1 // start with a count so that the collection flow can make it ready
       );
       (*in_rel.related_flow())->trigger.add_action([in_flow] {
         in_flow->trigger.decrement_count();
       });
+      break;
+    }
+    case FlowRelationship::IndexedFetching : {
+      assert(in_rel.related_flow());
+      auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(
+        (*in_rel.related_flow())->control_block
+      );
+      in_flow = std::make_shared<Flow>(
+        std::make_shared<ControlBlock>(use->get_handle(), nullptr)
+      );
+      in_flow->trigger.increment_count();
+      coll_cntrl->current_published_entries.evaluate_at(
+        std::make_pair(
+          *in_rel.version_key(), in_rel.index()
+        ),
+        [in_flow](PublicationTableEntry& entry) {
+          if(not entry.entry) {
+            entry.entry = std::make_shared<PublicationTableEntry::Impl>();
+          }
+          entry.entry->fetching_trigger.add_action([entry_entry=entry.entry, in_flow]{
+            in_flow->control_block->data =
+              (*entry_entry->source_flow)->control_block->data;
+            in_flow->trigger.decrement_count();
+          });
+        }
+      );
+
       break;
     }
     case FlowRelationship::Forwarding : {
@@ -349,7 +380,7 @@ Runtime::register_use(use_pending_registration_t* use) {
 
   std::shared_ptr<AntiFlow> anti_out_flow = nullptr;
 
-  auto const& anti_out_rel = use->get_anti_in_flow_relationship();
+  auto const& anti_out_rel = use->get_anti_out_flow_relationship();
   auto anti_out_related_flow = anti_out_rel.related_flow();
   auto anti_out_related_anti_flow = anti_out_rel.related_anti_flow();
   if(anti_out_rel.use_corresponding_in_flow_as_related()) {
@@ -388,6 +419,27 @@ Runtime::register_use(use_pending_registration_t* use) {
           anti_out_flow_related->trigger.decrement_count();
         });
       }
+      break;
+    }
+    case FlowRelationship::AntiIndexedFetching : {
+      // We need to get the published entries from the in flow
+      assert(in_rel.related_flow());
+      auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(
+        (*in_rel.related_flow())->control_block
+      );
+      anti_out_flow = std::make_shared<AntiFlow>();
+
+      coll_cntrl->current_published_entries.evaluate_at(
+        std::make_pair(
+          *anti_out_rel.version_key(), anti_out_rel.index()
+        ),
+        [anti_out_flow](PublicationTableEntry& entry) {
+          assert(entry.entry);
+          anti_out_flow->trigger.add_action([entry_entry=entry.entry]{
+            entry_entry->release_trigger.decrement_count();
+          });
+        }
+      );
       break;
     }
     default : {
@@ -429,6 +481,49 @@ Runtime::release_use(use_pending_release_t* use) {
   if(use->get_anti_out_flow()) use->get_anti_out_flow()->trigger.decrement_count();
 
 }
+
+//==============================================================================
+
+void
+Runtime::publish_use(
+  std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& pub_use,
+  darma_runtime::abstract::frontend::PublicationDetails* details
+) {
+  assert(pub_use->get_in_flow()->control_block->parent_collection);
+
+  auto* parent_cntrl = pub_use->get_in_flow()->control_block->parent_collection;
+
+  parent_cntrl->current_published_entries.evaluate_at(
+    std::make_pair(
+      details->get_version_name(),
+      pub_use->get_in_flow()->control_block->collection_index
+    ),
+    [this, details, &pub_use] (PublicationTableEntry& entry) {
+      if(not entry.entry) {
+        entry.entry = std::make_shared<PublicationTableEntry::Impl>();
+      }
+      entry.entry->release_trigger.advance_count(details->get_n_fetchers());
+      *entry.entry->source_flow = pub_use->get_in_flow();
+
+      auto& pub_anti_out = pub_use->get_anti_out_flow();
+      pub_anti_out->trigger.increment_count();
+      entry.entry->release_trigger.add_action([
+        this, pub_anti_out, pub_use=std::move(pub_use)
+      ]{
+        pub_anti_out->trigger.decrement_count();
+        release_use(
+          darma_runtime::abstract::frontend::use_cast<
+            darma_runtime::abstract::frontend::UsePendingRelease*
+          >(pub_use.get())
+        );
+      });
+
+      entry.entry->fetching_trigger.decrement_count();
+    }
+  );
+
+}
+
 
 //==============================================================================
 

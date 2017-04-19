@@ -131,7 +131,6 @@ class CountdownTrigger {
 
   public:
 
-    explicit
     CountdownTrigger(std::size_t initial_count)
       : count_(initial_count)
     { }
@@ -156,6 +155,10 @@ class CountdownTrigger {
     void increment_count() {
       assert(not triggered_.load());
       ++count_;
+    }
+
+    void advance_count(std::size_t count) {
+      count_.fetch_add(count);
     }
 
     void decrement_count() {
