@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      concurrent_list.hpp
+//                      worker.hpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,73 +42,55 @@
 //@HEADER
 */
 
-#ifndef DARMASIMPLECVBACKEND_CONCURRENT_LIST_HPP
-#define DARMASIMPLECVBACKEND_CONCURRENT_LIST_HPP
+#ifndef DARMASIMPLECVBACKEND_WORKER_HPP
+#define DARMASIMPLECVBACKEND_WORKER_HPP
 
-#include <mutex>
-#include <deque>
+#include <thread>
+#include <cassert>
+
+#include <darma/interface/backend/runtime.h>
+
+#include "concurrent_list.hpp"
 
 namespace simple_backend {
 
-// A simple, stand-in concurrent list implementation, for now
-template <typename T>
-class ConcurrentDeque {
 
+struct Worker {
   private:
 
-    // Just put locks around everything for now.  We'll do something faster
-    // some other time
-    std::unique_ptr<std::mutex> mutex_;
-
-    std::deque<T> data_;
+    std::unique_ptr<std::thread> thread_;
 
   public:
 
-    ConcurrentDeque()
-      : mutex_(std::make_unique<std::mutex>())
+    using task_unique_ptr = darma_runtime::abstract::backend::Runtime::task_unique_ptr;
+
+    ConcurrentDeque<task_unique_ptr> ready_tasks;
+
+    size_t id;
+
+    Worker(size_t id) : id(id) { }
+
+    Worker(Worker&& other)
+      : thread_(std::move(other.thread_)),
+        ready_tasks(std::move(other.ready_tasks)),
+        id(other.id)
     { }
 
-    ConcurrentDeque(ConcurrentDeque&& other)
-      : mutex_(std::move(other.mutex_)),
-        data_(std::move(other.data_))
-    { }
 
-    template <typename... Args>
-    void emplace_front(Args&&... args) {
-      std::lock_guard<std::mutex> lg(*mutex_);
-      data_.emplace_front(std::forward<Args>(args)...);
+    void spawn_work_loop(size_t n_threads_total);
+
+    void run_work_loop(size_t n_threads_total);
+
+    void run_task(task_unique_ptr&& task);
+
+    void join() {
+      assert(thread_);
+      thread_->join();
     }
 
-    template <typename... Args>
-    void
-    emplace_back(Args&&... args) {
-      std::lock_guard<std::mutex> lg(*mutex_);
-      data_.emplace_back(std::forward<Args>(args)...);
-    }
-
-    std::unique_ptr<T>
-    get_and_pop_front() {
-      std::lock_guard<std::mutex> lg(*mutex_);
-      if(data_.empty()) return nullptr;
-      else {
-        auto rv = std::make_unique<T>(std::move(data_.front()));
-        data_.pop_front();
-        return std::move(rv);
-      }
-    }
-
-    std::unique_ptr<T>
-    get_and_pop_back() {
-      std::lock_guard<std::mutex> lg(*mutex_);
-      if(data_.empty()) return nullptr;
-      else {
-        auto rv = std::make_unique<T>(std::move(data_.back()));
-        data_.pop_back();
-        return std::move(rv);
-      }
-    }
 };
+
 
 } // end namespace simple_backend
 
-#endif //DARMASIMPLECVBACKEND_CONCURRENT_LIST_HPP
+#endif //DARMASIMPLECVBACKEND_WORKER_HPP

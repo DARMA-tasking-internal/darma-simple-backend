@@ -51,6 +51,7 @@
 
 #include "concurrent_list.hpp"
 #include "trigger.hpp"
+#include "worker.hpp"
 #include "flow.hpp"
 
 namespace simple_backend {
@@ -76,17 +77,12 @@ class Runtime
 
       public:
         PendingTaskHolder(task_unique_ptr&& task);
+        void enqueue_or_run();
+        void enqueue_or_run(size_t worker_id, bool allow_run_on_stack = true);
     };
 
     // Maximum concurrency
-    size_t nthreads_ = 8;
-    std::vector<std::thread> workers_;
-
-    ConcurrentDeque<task_unique_ptr> ready_tasks_;
-    CountdownTrigger<SingleAction> shutdown_trigger_;
-
-    void _spin_up_worker_threads();
-
+    size_t nthreads_ = 4;
 
   public:
 
@@ -127,6 +123,12 @@ class Runtime
     }
 
     static std::unique_ptr<Runtime> instance;
+
+    CountdownTrigger<SingleAction> shutdown_trigger;
+
+    std::vector<Worker> workers;
+
+    void spin_up_worker_threads();
 
   public:
 

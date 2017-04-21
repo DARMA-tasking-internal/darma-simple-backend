@@ -152,6 +152,28 @@ class CountdownTrigger {
       }
     }
 
+    // Add the first action if the trigger hasn't fired yet,
+    // do the second action if it has
+    template <typename CallableToAdd, typename CallableToDo>
+    void add_or_do_action(
+      CallableToAdd&& callable_to_add,
+      CallableToDo&& callable_to_do
+    ) {
+      if(triggered_.load()) {
+        callable_to_do();
+      }
+      else {
+        actions_.add_action(std::make_unique<
+          TriggeredOnceAction<std::decay_t<CallableToAdd>>
+        >(std::forward<CallableToAdd>(callable_to_add)));
+        // If the trigger happened while we were adding the callable, we
+        // need to do the actions now (which might include this action)
+        // since the whole queue of actions could have completed between
+        // our check of triggered_.load() and now
+        if(triggered_.load()) { actions_.do_actions(); }
+      }
+    }
+
     void increment_count() {
       assert(not triggered_.load());
       ++count_;

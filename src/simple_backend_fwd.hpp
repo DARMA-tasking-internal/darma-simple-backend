@@ -49,6 +49,7 @@ namespace simple_backend {
 
 struct Flow;
 struct AntiFlow;
+struct Worker;
 
 } // end namespace simple_backend
 

@@ -42,9 +42,11 @@
 //@HEADER
 */
 
+#include <random>
 
 #include "runtime.hpp"
 #include "flow.hpp"
+#include "worker.hpp"
 
 #include <darma/interface/frontend/top_level.h>
 
@@ -55,33 +57,41 @@ using namespace simple_backend;
 std::unique_ptr<Runtime> Runtime::instance = nullptr;
 
 static thread_local darma_runtime::abstract::frontend::Task* running_task = nullptr;
+static thread_local std::size_t this_worker_id = 0;
 
 void
 Runtime::initialize_top_level_instance(int argc, char** argv) {
   // TODO parse number of threads out of command line arguments
   auto top_level_task = darma_runtime::frontend::darma_top_level_setup(argc, argv);
-  instance = std::make_unique<Runtime>(std::move(top_level_task), 1);
+  instance = std::make_unique<Runtime>(std::move(top_level_task), 8);
 }
 
 //==============================================================================
 
 void
 Runtime::wait_for_top_level_instance_to_shut_down() {
-  for(auto&& thr : instance->workers_) { thr.join(); }
+  for(int i = 1; i < instance->nthreads_; ++i) {
+    instance->workers[i].join();
+  }
 }
 
 //==============================================================================
 
 // Construct from a task that is ready to run
 Runtime::Runtime(task_unique_ptr&& top_level_task, std::size_t nthreads)
-  : nthreads_(nthreads), shutdown_trigger_(1)
+  : nthreads_(nthreads), shutdown_trigger(1)
 {
-  shutdown_trigger_.add_action([this]{
-    for(int i = 0; i < nthreads_; ++i) { ready_tasks_.emplace_back(nullptr); }
+  shutdown_trigger.add_action([this]{
+    for(int i = 0; i < nthreads_; ++i) {
+      workers[i].ready_tasks.emplace_back(nullptr);
+    }
   });
-  ready_tasks_.emplace_back(std::move(top_level_task));
 
-  _spin_up_worker_threads();
+  // Create the workers
+  for(size_t i = 0; i < nthreads_; ++i) {
+    workers.emplace_back(i);
+  }
+  workers[0].ready_tasks.emplace_back(std::move(top_level_task));
 }
 
 //==============================================================================
@@ -94,66 +104,54 @@ Runtime::get_running_task() const { return running_task; }
 void
 Runtime::register_task(task_unique_ptr&& task) {
   // keep the workers from shutting down until this task is done
-  shutdown_trigger_.increment_count();
+  shutdown_trigger.increment_count();
 
   // PendingTaskHolder deletes itself, so this isn't a memory leak
-  new PendingTaskHolder(std::move(task));
+  auto* holder = new PendingTaskHolder(std::move(task));
+  holder->enqueue_or_run();
 }
+
+//==============================================================================
 
 void
 Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
   // keep the workers from shutting down until this task is done
-  shutdown_trigger_.increment_count();
+  shutdown_trigger.increment_count();
 
   for(size_t i = 0; i < tc->size(); ++i) {
-    register_task(tc->create_task_for_index(i));
+    // Enqueueing another task, so increment shutdown trigger
+    shutdown_trigger.increment_count();
+
+    // PendingTaskHolder deletes itself, so this isn't a memory leak
+    auto* holder = new PendingTaskHolder(tc->create_task_for_index(i));
+
+    holder->enqueue_or_run((this_worker_id + i) % nthreads_,
+      // Prevent immediate execution so that all tc indices get spawned
+      // and have a chance to run concurrently
+      // TODO this should be dependent on some lookahead variable
+      /* allow_run_on_stack = */ false
+    );
   }
 
   tc = nullptr;
-  shutdown_trigger_.decrement_count();
+  shutdown_trigger.decrement_count();
 }
+
+//==============================================================================
 
 void
-Runtime::_spin_up_worker_threads()
+Runtime::spin_up_worker_threads()
 {
-  workers_.reserve(nthreads_);
-  for(int i = 0; i < nthreads_; ++i) {
-    workers_.emplace_back([this]{
-
-      while(true) {
-        auto ready = ready_tasks_.get_and_pop_front();
-        if(ready) {
-
-          // if it's null, this is the signal to stop the workers
-          if(ready->get() == nullptr) { break; }
-          else {
-            // setup data
-            for(auto&& dep : ready->get()->get_dependencies()) {
-              if(dep->immediate_permissions() != use_t::None) {
-                dep->get_data_pointer_reference() =
-                  dep->get_in_flow()->control_block->data;
-              }
-            }
-            // set the running task
-            running_task = ready->get();
-
-            ready->get()->run();
-            // Delete the task object
-            *ready = nullptr;
-
-            // Reset the running task ptr
-            running_task = nullptr;
-
-            shutdown_trigger_.decrement_count();
-          }
-
-        } // end if any ready tasks exist
-      } // end while true loop
-
-    });
+  // needs to be two seperate loops to make sure ready tasks is initialized on
+  // all workers.  Also, only spawn threads on 1-n
+  for(size_t i = 1; i < nthreads_; ++i) {
+    workers[i].spawn_work_loop(nthreads_);
   }
+
+  workers[0].run_work_loop(nthreads_);
 }
 
+//==============================================================================
 
 void
 Runtime::register_use(use_pending_registration_t* use) {
@@ -530,7 +528,17 @@ Runtime::publish_use(
 Runtime::PendingTaskHolder::PendingTaskHolder(task_unique_ptr&& task)
   : task_(std::move(task)),
     trigger_(task_->get_dependencies().size() * 2)
-{
+{ }
+
+void Runtime::PendingTaskHolder::enqueue_or_run() {
+  enqueue_or_run(this_worker_id);
+}
+
+void Runtime::PendingTaskHolder::enqueue_or_run(
+  size_t worker_id,
+  bool allow_run_on_stack
+) {
+
   for(auto dep : task_->get_dependencies()) {
     // Dependencies
     if(dep->get_in_flow() and dep->immediate_permissions() != use_t::None) {
@@ -552,10 +560,107 @@ Runtime::PendingTaskHolder::PendingTaskHolder(task_unique_ptr&& task)
       trigger_.decrement_count();
     }
   }
-  trigger_.add_action([this] {
-    Runtime::instance->ready_tasks_.emplace_front(std::move(task_));
-    delete this;
+
+  if(allow_run_on_stack and worker_id == this_worker_id) {
+    trigger_.add_or_do_action(
+      // If all of the dependencies and antidependencies aren't ready, place it on
+      // the queue when it becomes ready
+      [this, worker_id] {
+        Runtime::instance->workers[worker_id].ready_tasks.emplace_front(std::move(task_));
+        delete this;
+      },
+      // Otherwise, just run it in place
+      // TODO enforce a maximum stack descent depth
+      [this, worker_id] {
+        Runtime::instance->workers[worker_id].run_task(std::move(task_));
+        delete this;
+      }
+    );
+  }
+  else {
+    trigger_.add_action(
+      // If all of the dependencies and antidependencies aren't ready, place it on
+      // the queue when it becomes ready
+      [this, worker_id] {
+        Runtime::instance->workers[worker_id].ready_tasks.emplace_front(std::move(task_));
+        delete this;
+      }
+    );
+  }
+}
+
+//==============================================================================
+
+void Worker::run_task(Runtime::task_unique_ptr&& task) {
+
+  // setup data
+  for(auto&& dep : task->get_dependencies()) {
+    if(dep->immediate_permissions() != Runtime::use_t::None) {
+      dep->get_data_pointer_reference() = dep->get_in_flow()->control_block->data;
+    }
+  }
+  // set the running task
+  auto* old_running_task = running_task;
+  running_task = task.get();
+
+  task->run();
+
+  // Delete the task object
+  task = nullptr;
+
+  // Reset the running task ptr
+  running_task = old_running_task;
+
+  Runtime::instance->shutdown_trigger.decrement_count();
+
+}
+
+void Worker::run_work_loop(size_t n_threads_total) {
+
+  std::random_device rd;
+  std::seed_seq seed{ rd(), rd(),rd(), rd(), rd(), rd(), rd(), rd(), rd() };
+  std::mt19937 steal_gen(seed);
+  std::uniform_int_distribution<> steal_dis(n_threads_total - 1);
+
+  this_worker_id = id;
+
+  while(true) {
+    auto ready = ready_tasks.get_and_pop_front();
+    // If there are any tasks on the front of our queue, get them
+    if(ready) {
+      // pop_front was successful, run the task
+
+      // if it's null, this is the signal to stop the workers
+      if(ready->get() == nullptr) { break; }
+      else { run_task(std::move(*ready.get())); }
+
+    } // end if any ready tasks exist
+    else {
+      // pop_front failed because queue was empty; try to do a steal
+      auto steal_from = (steal_dis(steal_gen) + id) % n_threads_total;
+
+      auto new_ready = Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back();
+      if(new_ready) {
+        if (new_ready->get() == nullptr) {
+          // oops, we stole the termination signal.  Put it back!
+          Runtime::instance->workers[steal_from].ready_tasks.emplace_back(
+            nullptr
+          );
+        } else {
+          run_task(std::move(*new_ready.get()));
+        }
+      }
+    }
+  } // end while true loop
+
+}
+
+void Worker::spawn_work_loop(size_t n_threads_total) {
+
+  thread_ = std::make_unique<std::thread>([this, n_threads_total]{
+    run_work_loop(n_threads_total);
   });
+
 }
 
 //==============================================================================

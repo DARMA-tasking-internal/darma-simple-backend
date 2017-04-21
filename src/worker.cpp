@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      concurrent_list.hpp
+//                      worker.cpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,73 +42,8 @@
 //@HEADER
 */
 
-#ifndef DARMASIMPLECVBACKEND_CONCURRENT_LIST_HPP
-#define DARMASIMPLECVBACKEND_CONCURRENT_LIST_HPP
+#include "worker.hpp"
 
-#include <mutex>
-#include <deque>
+using namespace simple_backend;
 
-namespace simple_backend {
 
-// A simple, stand-in concurrent list implementation, for now
-template <typename T>
-class ConcurrentDeque {
-
-  private:
-
-    // Just put locks around everything for now.  We'll do something faster
-    // some other time
-    std::unique_ptr<std::mutex> mutex_;
-
-    std::deque<T> data_;
-
-  public:
-
-    ConcurrentDeque()
-      : mutex_(std::make_unique<std::mutex>())
-    { }
-
-    ConcurrentDeque(ConcurrentDeque&& other)
-      : mutex_(std::move(other.mutex_)),
-        data_(std::move(other.data_))
-    { }
-
-    template <typename... Args>
-    void emplace_front(Args&&... args) {
-      std::lock_guard<std::mutex> lg(*mutex_);
-      data_.emplace_front(std::forward<Args>(args)...);
-    }
-
-    template <typename... Args>
-    void
-    emplace_back(Args&&... args) {
-      std::lock_guard<std::mutex> lg(*mutex_);
-      data_.emplace_back(std::forward<Args>(args)...);
-    }
-
-    std::unique_ptr<T>
-    get_and_pop_front() {
-      std::lock_guard<std::mutex> lg(*mutex_);
-      if(data_.empty()) return nullptr;
-      else {
-        auto rv = std::make_unique<T>(std::move(data_.front()));
-        data_.pop_front();
-        return std::move(rv);
-      }
-    }
-
-    std::unique_ptr<T>
-    get_and_pop_back() {
-      std::lock_guard<std::mutex> lg(*mutex_);
-      if(data_.empty()) return nullptr;
-      else {
-        auto rv = std::make_unique<T>(std::move(data_.back()));
-        data_.pop_back();
-        return std::move(rv);
-      }
-    }
-};
-
-} // end namespace simple_backend
-
-#endif //DARMASIMPLECVBACKEND_CONCURRENT_LIST_HPP

@@ -48,6 +48,7 @@
 int main(int argc, char** argv) {
 
   simple_backend::Runtime::initialize_top_level_instance(argc, argv);
+  simple_backend::Runtime::instance->spin_up_worker_threads();
   simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
 
 }
