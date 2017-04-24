@@ -82,7 +82,7 @@ class Runtime
     };
 
     // Maximum concurrency
-    size_t nthreads_ = 4;
+    size_t nthreads_;
 
   public:
 
@@ -121,6 +121,49 @@ class Runtime
       if(depth == 0) return nthreads_;
       else return 1; // for now
     }
+
+
+    //--------------------------------------------------------------------------
+    // <editor-fold desc="all migration-related functions are implemented, but they just assert"> {{{2
+
+    virtual void
+    reregister_migrated_use(
+      darma_runtime::abstract::frontend::RegisteredUse* u
+    ) override
+    {
+      assert(false); // No migration calls should ever be made.
+    }
+
+    virtual size_t
+    get_packed_flow_size(
+      darma_runtime::types::flow_t const& f
+    ) override
+    {
+      assert(false); // No migration calls should ever be made.
+      return 0;
+    }
+
+    virtual void
+    pack_flow(
+      darma_runtime::types::flow_t& f,
+      void*& buffer
+    ) override
+    {
+      assert(false); // No migration calls should ever be made.
+    }
+
+    virtual darma_runtime::types::flow_t
+    make_unpacked_flow(
+      void const*& buffer
+    ) override
+    {
+      assert(false);
+      return {};
+    }
+
+    // </editor-fold> end all migration-related functions are implemented, but they just assert }}}2
+    //--------------------------------------------------------------------------
+
 
     static std::unique_ptr<Runtime> instance;
 

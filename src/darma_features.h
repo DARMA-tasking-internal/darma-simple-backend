@@ -46,7 +46,7 @@
 #define SIMPLECVBACKEND_DARMA_FEATURES_H
 
 // Nothing but the flows and uses for now:
-#define _darma_backend_feature_progress_date 20151231
+#define _darma_backend_feature_progress_date 20161231
 
 // But we need anti-flows
 #define _darma_has_feature_anti_flows 1
@@ -54,5 +54,7 @@
 #define _darma_has_feature_create_concurrent_work 1
 
 #define _darma_has_feature_publish_fetch 1
+
+#define _darma_has_feature_simple_collectives 0
 
 #endif //SIMPLECVBACKEND_DARMA_FEATURES_H
