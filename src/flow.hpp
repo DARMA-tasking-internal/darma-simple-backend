@@ -148,17 +148,27 @@ struct CollectionControlBlock : ControlBlock {
 };
 
 struct Flow {
-  Flow(std::shared_ptr<ControlBlock> cblk) : control_block(cblk), trigger(0) { }
+  Flow(std::shared_ptr<ControlBlock> cblk) : control_block(cblk), ready_trigger(0) { }
+
   Flow( std::shared_ptr<ControlBlock> cblk, size_t initial_count)
-    : control_block(cblk), trigger(initial_count) { }
-  CountdownTrigger<MultiActionList> trigger;
+    : control_block(cblk), ready_trigger(initial_count) { }
+
+  CountdownTrigger<MultiActionList> ready_trigger;
+
   std::shared_ptr<ControlBlock> control_block;
+
+  // Currently only used with commutative:
+  std::mutex commutative_mtx;
+  ResettableBooleanTrigger<MultiActionList> comm_in_flow_release_trigger;
+
 };
 
 struct AntiFlow {
-  AntiFlow() : trigger(0) { }
-  AntiFlow(size_t initial_count) : trigger(initial_count) { }
-  CountdownTrigger<MultiActionList> trigger;
+  AntiFlow() : ready_trigger(0) { }
+
+  AntiFlow(size_t initial_count) : ready_trigger(initial_count) { }
+
+  CountdownTrigger<MultiActionList> ready_trigger;
 };
 
 } // end namespace simple_backend

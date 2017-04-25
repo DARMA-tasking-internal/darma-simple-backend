@@ -1,0 +1,2 @@
+add_executable(simple_commutative simple_commutative.cpp)
+target_link_libraries(simple_commutative PUBLIC darma_SimpleCV_backend)

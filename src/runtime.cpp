@@ -47,10 +47,14 @@
 #include "runtime.hpp"
 #include "flow.hpp"
 #include "worker.hpp"
+#include "util.hpp"
 
 #include <darma/interface/frontend/top_level.h>
 
 #include <darma.h>
+
+static constexpr size_t n_threads_default = 8;
+static constexpr size_t lookahead_default = 20;
 
 using namespace simple_backend;
 
@@ -63,7 +67,10 @@ void
 Runtime::initialize_top_level_instance(int argc, char** argv) {
   // TODO parse number of threads out of command line arguments
   auto top_level_task = darma_runtime::frontend::darma_top_level_setup(argc, argv);
-  instance = std::make_unique<Runtime>(std::move(top_level_task), 8);
+  instance = std::make_unique<Runtime>(std::move(top_level_task),
+    n_threads_default,
+    lookahead_default
+  );
 }
 
 //==============================================================================
@@ -78,8 +85,8 @@ Runtime::wait_for_top_level_instance_to_shut_down() {
 //==============================================================================
 
 // Construct from a task that is ready to run
-Runtime::Runtime(task_unique_ptr&& top_level_task, std::size_t nthreads)
-  : nthreads_(nthreads), shutdown_trigger(1)
+Runtime::Runtime(task_unique_ptr&& top_level_task, std::size_t nthreads, std::size_t lookahead)
+  : nthreads_(nthreads), shutdown_trigger(1), lookahead_(lookahead)
 {
   shutdown_trigger.add_action([this]{
     for(int i = 0; i < nthreads_; ++i) {
@@ -108,7 +115,11 @@ Runtime::register_task(task_unique_ptr&& task) {
 
   // PendingTaskHolder deletes itself, so this isn't a memory leak
   auto* holder = new PendingTaskHolder(std::move(task));
-  holder->enqueue_or_run();
+  holder->enqueue_or_run(
+    // only run on the stack if the number of pending tasks is greater than
+    // or equal to the lookahead
+    pending_tasks_.load() >= lookahead_
+  );
 }
 
 //==============================================================================
@@ -119,7 +130,7 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
   shutdown_trigger.increment_count();
 
   for(size_t i = 0; i < tc->size(); ++i) {
-    // Enqueueing another task, so increment shutdown trigger
+    // Enqueueing another task, so increment shutdown ready_trigger
     shutdown_trigger.increment_count();
 
     // PendingTaskHolder deletes itself, so this isn't a memory leak
@@ -190,7 +201,7 @@ Runtime::register_use(use_pending_registration_t* use) {
         std::make_shared<ControlBlock>(use->get_handle()),
         1 // start with a count so we can make it ready immediately
       );
-      in_flow->trigger.decrement_count();
+      in_flow->ready_trigger.decrement_count();
       break;
     }
     case FlowRelationship::InitialCollection : {
@@ -204,7 +215,7 @@ Runtime::register_use(use_pending_registration_t* use) {
         ),
         1 // start with a count so we can make it ready immediately
       );
-      in_flow->trigger.decrement_count();
+      in_flow->ready_trigger.decrement_count();
       break;
     }
     case FlowRelationship::IndexedLocal : {
@@ -220,8 +231,8 @@ Runtime::register_use(use_pending_registration_t* use) {
         ),
         1 // start with a count so that the collection flow can make it ready
       );
-      (*in_rel.related_flow())->trigger.add_action([in_flow] {
-        in_flow->trigger.decrement_count();
+      (*in_rel.related_flow())->ready_trigger.add_action([in_flow] {
+        in_flow->ready_trigger.decrement_count();
       });
       break;
     }
@@ -233,7 +244,7 @@ Runtime::register_use(use_pending_registration_t* use) {
       in_flow = std::make_shared<Flow>(
         std::make_shared<ControlBlock>(use->get_handle(), nullptr)
       );
-      in_flow->trigger.increment_count();
+      in_flow->ready_trigger.increment_count();
       coll_cntrl->current_published_entries.evaluate_at(
         std::make_pair(
           *in_rel.version_key(), in_rel.index()
@@ -245,7 +256,7 @@ Runtime::register_use(use_pending_registration_t* use) {
           entry.entry->fetching_trigger.add_action([entry_entry=entry.entry, in_flow]{
             in_flow->control_block->data =
               (*entry_entry->source_flow)->control_block->data;
-            in_flow->trigger.decrement_count();
+            in_flow->ready_trigger.decrement_count();
           });
         }
       );
@@ -294,8 +305,8 @@ Runtime::register_use(use_pending_registration_t* use) {
         anti_in_flow = std::make_shared<AntiFlow>(
           1 // start with a count so that the collection flow can make it ready
         );
-        (*anti_in_rel.related_anti_flow())->trigger.add_action([anti_in_flow] {
-            anti_in_flow->trigger.decrement_count();
+        (*anti_in_rel.related_anti_flow())->ready_trigger.add_action([anti_in_flow] {
+            anti_in_flow->ready_trigger.decrement_count();
         });
       }
       break;
@@ -351,10 +362,10 @@ Runtime::register_use(use_pending_registration_t* use) {
       assert(out_related);
       // Indexed local out doesn't need a control block
       auto out_flow_related = *out_related;
-      out_flow_related->trigger.increment_count();
+      out_flow_related->ready_trigger.increment_count();
       out_flow = std::make_shared<Flow>(std::make_shared<ControlBlock>(nullptr));
-      out_flow->trigger.add_action([out_flow_related]{
-        out_flow_related->trigger.decrement_count();
+      out_flow->ready_trigger.add_action([out_flow_related]{
+        out_flow_related->ready_trigger.decrement_count();
       });
       break;
     }
@@ -366,7 +377,7 @@ Runtime::register_use(use_pending_registration_t* use) {
 
   if(out_flow) {
     // It's being used as an out, so make it not ready until this is released
-    out_flow->trigger.increment_count();
+    out_flow->ready_trigger.increment_count();
     use->set_out_flow(out_flow);
   }
 
@@ -411,10 +422,10 @@ Runtime::register_use(use_pending_registration_t* use) {
       // Only create an indexed local version if the collection flow isn't insignificant
       if(*anti_out_related_anti_flow) {
         auto anti_out_flow_related = *anti_out_related_anti_flow;
-        anti_out_flow_related->trigger.increment_count();
+        anti_out_flow_related->ready_trigger.increment_count();
         anti_out_flow = std::make_shared<AntiFlow>();
-        out_flow->trigger.add_action([anti_out_flow_related] {
-          anti_out_flow_related->trigger.decrement_count();
+        out_flow->ready_trigger.add_action([anti_out_flow_related] {
+          anti_out_flow_related->ready_trigger.decrement_count();
         });
       }
       break;
@@ -433,7 +444,7 @@ Runtime::register_use(use_pending_registration_t* use) {
         ),
         [anti_out_flow](PublicationTableEntry& entry) {
           assert(entry.entry);
-          anti_out_flow->trigger.add_action([entry_entry=entry.entry]{
+          anti_out_flow->ready_trigger.add_action([entry_entry=entry.entry]{
             entry_entry->release_trigger.decrement_count();
           });
         }
@@ -448,7 +459,7 @@ Runtime::register_use(use_pending_registration_t* use) {
 
   if(anti_out_flow) {
     // It's being used as an out, so make it not ready until this is released
-    anti_out_flow->trigger.increment_count();
+    anti_out_flow->ready_trigger.increment_count();
     use->set_anti_out_flow(anti_out_flow);
   }
 
@@ -465,18 +476,23 @@ Runtime::release_use(use_pending_release_t* use) {
   if(use->establishes_alias()) {
     assert(use->get_in_flow() and use->get_out_flow());
     auto& out_flow = use->get_out_flow();
+
     // Increment the count to indicate responsibility for all of the
     // producers of the in flow
-    out_flow->trigger.increment_count();
+    out_flow->ready_trigger.increment_count();
     // Then decrement that count when the in flow becomes ready
-    use->get_in_flow()->trigger.add_action([out_flow]{
-      out_flow->trigger.decrement_count();
+    use->get_in_flow()->ready_trigger.add_action([out_flow]{
+      out_flow->ready_trigger.decrement_count();
     });
   }
 
-  if(use->get_out_flow()) use->get_out_flow()->trigger.decrement_count();
+  if(use->get_out_flow()) use->get_out_flow()->ready_trigger.decrement_count();
 
-  if(use->get_anti_out_flow()) use->get_anti_out_flow()->trigger.decrement_count();
+  if(use->get_anti_out_flow()) use->get_anti_out_flow()->ready_trigger.decrement_count();
+
+  if(use->immediate_permissions() == use_t::Commutative) {
+    use->get_in_flow()->comm_in_flow_release_trigger.activate();
+  }
 
 }
 
@@ -504,11 +520,11 @@ Runtime::publish_use(
       *entry.entry->source_flow = pub_use->get_in_flow();
 
       auto& pub_anti_out = pub_use->get_anti_out_flow();
-      pub_anti_out->trigger.increment_count();
+      pub_anti_out->ready_trigger.increment_count();
       entry.entry->release_trigger.add_action([
         this, pub_anti_out, pub_use=std::move(pub_use)
       ]{
-        pub_anti_out->trigger.decrement_count();
+        pub_anti_out->ready_trigger.decrement_count();
         release_use(
           darma_runtime::abstract::frontend::use_cast<
             darma_runtime::abstract::frontend::UsePendingRelease*
@@ -528,21 +544,110 @@ Runtime::publish_use(
 Runtime::PendingTaskHolder::PendingTaskHolder(task_unique_ptr&& task)
   : task_(std::move(task)),
     trigger_(task_->get_dependencies().size() * 2)
-{ }
-
-void Runtime::PendingTaskHolder::enqueue_or_run() {
-  enqueue_or_run(this_worker_id);
+{
+  ++Runtime::instance->pending_tasks_;
 }
+
+Runtime::PendingTaskHolder::~PendingTaskHolder() {
+  --Runtime::instance->pending_tasks_;
+}
+
+void Runtime::PendingTaskHolder::enqueue_or_run(bool allow_run_on_stack) {
+  enqueue_or_run(this_worker_id, allow_run_on_stack);
+}
+
+struct ObtainExclusiveAccessAction {
+  Runtime::PendingTaskHolder& task_holder;
+  std::vector<std::reference_wrapper<std::mutex>> comm_locks;
+  std::vector<std::shared_ptr<Flow>> comm_in_flows;
+  std::size_t worker_id;
+  bool allow_run_on_stack;
+
+  ObtainExclusiveAccessAction(
+    Runtime::PendingTaskHolder& task_holder,
+    std::vector<std::reference_wrapper<std::mutex>>&& comm_locks,
+    std::vector<std::shared_ptr<Flow>>&& comm_in_flows,
+    std::size_t worker_id,
+    bool allow_run_on_stack
+  ) : task_holder(task_holder),
+      comm_locks(std::move(comm_locks)),
+      comm_in_flows(std::move(comm_in_flows)),
+      worker_id(worker_id),
+      allow_run_on_stack(allow_run_on_stack)
+  { }
+
+  ObtainExclusiveAccessAction(ObtainExclusiveAccessAction&&) = default;
+
+  void operator()() {
+
+    // TODO we probably should sort the locks before trying to lock them
+    auto lock_result = simple_backend::try_lock(
+      comm_locks.begin(), comm_locks.end()
+    );
+    if(lock_result == TryLockSuccess) {
+      // enqueue the task and add all of the release actions to the in flows
+      for(auto&& in_flow : comm_in_flows) {
+        // we need to reset the trigger first so that it can be triggered
+        // when the flow is released inside of the task
+        in_flow->comm_in_flow_release_trigger.reset();
+        in_flow->comm_in_flow_release_trigger.add_priority_action([in_flow] {
+          in_flow->commutative_mtx.unlock();
+        });
+      }
+
+      // Enqueue or run the task, since the task holder triggering is what
+      // got us here
+      if(allow_run_on_stack) {
+        // TODO: theoretically we should delete the task holder before we
+        //       run or enqueue task, but this could be tricky
+        Runtime::instance->workers[worker_id].run_task(std::move(task_holder.task_));
+        delete &task_holder;
+      }
+      else {
+        Runtime::instance->workers[worker_id].ready_tasks.emplace_front(
+          std::move(task_holder.task_)
+        );
+        delete &task_holder;
+      }
+
+    } // end if success
+    else {
+      // otherwise, enqueue the try-again action on the one that failed
+      // This *does* race with the reset and the triggering of the release
+      // as in flow trigger.
+      comm_in_flows[lock_result]->comm_in_flow_release_trigger.add_action(
+        std::move(*this)
+      );
+    }
+
+  }
+
+};
+
 
 void Runtime::PendingTaskHolder::enqueue_or_run(
   size_t worker_id,
   bool allow_run_on_stack
 ) {
 
+  // Commutative general strategy:
+  // - try to obtain all locks with an iterator analog of std::try_lock
+  // - if it fails, add an action that tries again to the ready_trigger list of the
+  //   flow corresponding to the failed lock
+  // - if it succeeds, add a triggered action to be run on release (we need a
+  //   new ready_trigger list for this) that releases the locks and transfer ownership
+  //   of the list to that action.
+  std::vector<std::reference_wrapper<std::mutex>> commutative_locks_to_obtain;
+  std::vector<std::shared_ptr<Flow>> commutative_in_flows;
+
   for(auto dep : task_->get_dependencies()) {
     // Dependencies
     if(dep->get_in_flow() and dep->immediate_permissions() != use_t::None) {
-      dep->get_in_flow()->trigger.add_action([this] {
+      if(dep->immediate_permissions() == use_t::Commutative) {
+        commutative_locks_to_obtain.emplace_back(std::ref(dep->get_in_flow()->commutative_mtx));
+        commutative_in_flows.emplace_back(dep->get_in_flow());
+      }
+      dep->get_in_flow()->ready_trigger.add_action([this] {
         trigger_.decrement_count();
       });
     }
@@ -552,7 +657,7 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
 
     // Antidependencies
     if(dep->get_anti_in_flow()) {
-      dep->get_in_flow()->trigger.add_action([this] {
+      dep->get_anti_in_flow()->ready_trigger.add_action([this] {
         trigger_.decrement_count();
       });
     }
@@ -561,32 +666,57 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
     }
   }
 
-  if(allow_run_on_stack and worker_id == this_worker_id) {
-    trigger_.add_or_do_action(
-      // If all of the dependencies and antidependencies aren't ready, place it on
-      // the queue when it becomes ready
-      [this, worker_id] {
-        Runtime::instance->workers[worker_id].ready_tasks.emplace_front(std::move(task_));
-        delete this;
-      },
-      // Otherwise, just run it in place
-      // TODO enforce a maximum stack descent depth
-      [this, worker_id] {
-        Runtime::instance->workers[worker_id].run_task(std::move(task_));
-        delete this;
-      }
+  if(commutative_locks_to_obtain.size() > 0) {
+    // When everything else is ready, we want to try and obtain exclusive
+    // access to all commutative in-flows
+    trigger_.add_action(
+      ObtainExclusiveAccessAction(*this,
+        std::move(commutative_locks_to_obtain),
+        std::move(commutative_in_flows),
+        worker_id,
+        allow_run_on_stack
+      )
     );
   }
   else {
-    trigger_.add_action(
-      // If all of the dependencies and antidependencies aren't ready, place it on
-      // the queue when it becomes ready
-      [this, worker_id] {
-        Runtime::instance->workers[worker_id].ready_tasks.emplace_front(std::move(task_));
-        delete this;
-      }
-    );
+    if(allow_run_on_stack and worker_id == this_worker_id) {
+      trigger_.add_or_do_action(
+        // If all of the dependencies and antidependencies aren't ready, place it on
+        // the queue when it becomes ready
+        [this, worker_id] {
+          Runtime::instance->workers[worker_id].ready_tasks.emplace_front(std::move(task_));
+          delete this;
+        },
+        // Otherwise, just run it in place
+        // TODO enforce a maximum stack descent depth
+        [this, worker_id] {
+          Runtime::instance->workers[worker_id].run_task(std::move(task_));
+          delete this;
+        }
+      );
+    }
+    else {
+      trigger_.add_action(
+        // If all of the dependencies and antidependencies aren't ready, place it on
+        // the queue when it becomes ready
+        [this, worker_id] {
+          Runtime::instance->workers[worker_id].ready_tasks.emplace_front(std::move(task_));
+          delete this;
+        }
+      );
+    }
   }
+
+}
+
+//==============================================================================
+
+void Runtime::allreduce_use(
+  std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_in_out,
+  darma_runtime::abstract::frontend::CollectiveDetails const* details,
+  darma_runtime::types::key_t const& tag
+) {
+  assert(false); // TODO implement this
 }
 
 //==============================================================================
@@ -625,7 +755,11 @@ void Worker::run_work_loop(size_t n_threads_total) {
   this_worker_id = id;
 
   while(true) {
-    auto ready = ready_tasks.get_and_pop_front();
+    //auto ready = ready_tasks.get_and_pop_front();
+    // "Random" version:
+    auto ready = steal_dis(steal_gen) % 2 == 0 ?
+      ready_tasks.get_and_pop_front() : ready_tasks.get_and_pop_back();
+
     // If there are any tasks on the front of our queue, get them
     if(ready) {
       // pop_front was successful, run the task
@@ -639,7 +773,11 @@ void Worker::run_work_loop(size_t n_threads_total) {
       // pop_front failed because queue was empty; try to do a steal
       auto steal_from = (steal_dis(steal_gen) + id) % n_threads_total;
 
-      auto new_ready = Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back();
+      //auto new_ready = Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back();
+      // "Random" version:
+      auto new_ready = steal_dis(steal_gen) % 2 == 0 ?
+        Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back()
+          : Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_front();
       if(new_ready) {
         if (new_ready->get() == nullptr) {
           // oops, we stole the termination signal.  Put it back!

@@ -84,18 +84,31 @@ class TriggeredOnceAction
 
 struct MultiActionList {
 
-  ConcurrentDeque<std::unique_ptr<TriggeredActionBase>> actions_;
+  std::atomic<ConcurrentDeque<std::unique_ptr<TriggeredActionBase>>*> actions_ = { nullptr };
+
+  MultiActionList() : actions_(new ConcurrentDeque<std::unique_ptr<TriggeredActionBase>>())
+  { }
 
   template <typename ActionUniquePtr>
   void add_action(ActionUniquePtr&& action_ptr) {
-    actions_.emplace_back(std::forward<ActionUniquePtr>(action_ptr));
+    actions_.load()->emplace_back(std::forward<ActionUniquePtr>(action_ptr));
+  }
+
+  template <typename ActionUniquePtr>
+  void add_priority_action(ActionUniquePtr&& action_ptr) {
+    actions_.load()->emplace_front(std::forward<ActionUniquePtr>(action_ptr));
   }
 
   void do_actions() {
-    auto current_action = actions_.get_and_pop_front();
+    // Allow an action that deletes the action list (or just deletion of this
+    // during run) by moving the action list member onto the stack
+    auto* action_list = actions_.exchange(
+      new ConcurrentDeque<std::unique_ptr<TriggeredActionBase>>()
+    );
+    auto current_action = action_list->get_and_pop_front();
     while(current_action) {
       current_action->get()->run();
-      current_action = actions_.get_and_pop_front();
+      current_action = action_list->get_and_pop_front();
     }
   }
 
@@ -108,6 +121,11 @@ struct SingleAction {
   template <typename ActionUniquePtr>
   void add_action(ActionUniquePtr&& action_ptr) {
     action_.store(action_ptr.release());
+  }
+
+  template <typename ActionUniquePtr>
+  void add_priority_action(ActionUniquePtr&& action_ptr) {
+    add_action(std::forward<ActionUniquePtr>(action_ptr));
   }
 
   void do_actions() {
@@ -144,7 +162,7 @@ class CountdownTrigger {
         actions_.add_action(std::make_unique<
           TriggeredOnceAction<std::decay_t<Callable>>
         >(std::forward<Callable>(callable)));
-        // If the trigger happened while we were adding the callable, we
+        // If the ready_trigger happened while we were adding the callable, we
         // need to do the actions now (which might include this action)
         // since the whole queue of actions could have completed between
         // our check of triggered_.load() and now
@@ -152,7 +170,7 @@ class CountdownTrigger {
       }
     }
 
-    // Add the first action if the trigger hasn't fired yet,
+    // Add the first action if the ready_trigger hasn't fired yet,
     // do the second action if it has
     template <typename CallableToAdd, typename CallableToDo>
     void add_or_do_action(
@@ -166,7 +184,7 @@ class CountdownTrigger {
         actions_.add_action(std::make_unique<
           TriggeredOnceAction<std::decay_t<CallableToAdd>>
         >(std::forward<CallableToAdd>(callable_to_add)));
-        // If the trigger happened while we were adding the callable, we
+        // If the ready_trigger happened while we were adding the callable, we
         // need to do the actions now (which might include this action)
         // since the whole queue of actions could have completed between
         // our check of triggered_.load() and now
@@ -193,7 +211,72 @@ class CountdownTrigger {
     }
 };
 
+template <typename ActionList>
+class ResettableBooleanTrigger {
 
+  private:
+
+    std::atomic<bool> triggered_ = { false };
+    std::atomic<ActionList*> actions_ = { nullptr };
+
+  public:
+
+    ResettableBooleanTrigger()
+      : actions_(new ActionList())
+    { }
+
+    ~ResettableBooleanTrigger() {
+      delete actions_.load();
+    }
+
+    void activate() {
+      triggered_.store(true);
+      actions_.load()->do_actions();
+    }
+
+    // Note that activate and reset aren't allowed to race!
+    void reset() {
+      // Any actions that race with the reset will run the next time activate
+      // is called
+      // Need to do a swap here to avoid racing with action list completion
+      // ActionList must be deletable while do_actions is running (potentially
+      // from another thread)
+      if(triggered_.load()) {
+        ActionList* old_actions = actions_.exchange(new ActionList());
+        old_actions->do_actions();
+        // Safe to delete, since no one can add actions to it
+        delete old_actions;
+      }
+      triggered_.store(false);
+    }
+
+    template <typename Callable>
+    void add_action(Callable&& callable) {
+      if(triggered_.load()) {
+        callable();
+      }
+      else {
+        actions_.load()->add_action(std::make_unique<
+          TriggeredOnceAction<std::decay_t<Callable>>
+        >(std::forward<Callable>(callable)));
+        if(triggered_.load()) { actions_.load()->do_actions(); }
+      }
+    }
+
+    template <typename Callable>
+    void add_priority_action(Callable&& callable) {
+      if(triggered_.load()) {
+        callable();
+      }
+      else {
+        actions_.load()->add_priority_action(std::make_unique<
+          TriggeredOnceAction<std::decay_t<Callable>>
+        >(std::forward<Callable>(callable)));
+        if(triggered_.load()) { actions_.load()->do_actions(); }
+      }
+    }
+
+};
 
 } // end namespace simple_backend
 

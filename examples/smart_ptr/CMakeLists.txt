@@ -1,0 +1,2 @@
+add_executable(smart_ptr smart_ptr.cc)
+target_link_libraries(smart_ptr darma_SimpleCV_backend)

@@ -68,27 +68,31 @@ class Runtime
     using use_pending_registration_t = darma_runtime::abstract::frontend::UsePendingRegistration;
     using use_pending_release_t = darma_runtime::abstract::backend::Runtime::use_pending_release_t;
 
-  private:
-
     struct PendingTaskHolder {
-      private:
+      public:
+
         task_unique_ptr task_;
         CountdownTrigger<SingleAction> trigger_;
 
-      public:
         PendingTaskHolder(task_unique_ptr&& task);
-        void enqueue_or_run();
-        void enqueue_or_run(size_t worker_id, bool allow_run_on_stack = true);
+        ~PendingTaskHolder();
+        void enqueue_or_run(bool allow_run_on_stack);
+        void enqueue_or_run(size_t worker_id, bool allow_run_on_stack);
     };
+
+  private:
 
     // Maximum concurrency
     size_t nthreads_;
+
+    size_t lookahead_;
+    std::atomic<size_t> pending_tasks_ = { 0 };
 
   public:
 
     Runtime(
       task_unique_ptr&& top_level_task,
-      size_t n_threads
+      size_t n_threads, size_t lookahead
     );
 
     task_t* get_running_task() const override;
@@ -105,6 +109,23 @@ class Runtime
       std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&&,
       darma_runtime::abstract::frontend::PublicationDetails*
     ) override;
+
+    void
+    allreduce_use(
+      std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_in_out,
+      darma_runtime::abstract::frontend::CollectiveDetails const* details,
+      darma_runtime::types::key_t const& tag
+    ) override;
+
+    void
+    allreduce_use(
+      std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_in,
+      std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_out,
+      darma_runtime::abstract::frontend::CollectiveDetails const* details,
+      darma_runtime::types::key_t const& tag
+    ) override {
+      assert(false); // not implemented
+    }
 
     void* allocate(
       size_t n_bytes,

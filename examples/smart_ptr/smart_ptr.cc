@@ -2,9 +2,9 @@
 //@HEADER
 // ************************************************************************
 //
-//                      worker.cpp
+//                        fib.cc
 //                         DARMA
-//              Copyright (C) 2017 Sandia Corporation
+//              Copyright (C) 2016 Sandia Corporation
 //
 // Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
@@ -42,8 +42,55 @@
 //@HEADER
 */
 
-#include "worker.hpp"
+#include <darma.h>
+#include <assert.h>
+#include <memory>
 
-using namespace simple_backend;
+using namespace darma_runtime;
 
 
+namespace darma_runtime {
+namespace serialization {
+
+template <typename T>
+struct Serializer<std::unique_ptr<T>> {
+
+  static_assert(std::is_move_constructible<T>::value,
+    "can't serialize a unique_ptr to a non-move constructible type"
+  );
+  static_assert(std::is_default_constructible<T>::value,
+    "can't serialize a unique_ptr to a non-default constructible type"
+  );
+
+  template <typename ArchiveT>
+  void serialize(std::unique_ptr<T>& val_ptr, ArchiveT& ar) {
+    if(ar.is_unpacking()) {
+      T val;
+      ar >> val;
+      val_ptr = std::make_unique<T>(std::move(val));
+    }
+    else {
+      ar | (*val_ptr);
+    }
+  }
+
+};
+
+} // end namespace serialization
+} // end namespace darma_runtime
+
+
+void darma_main_task(std::vector<std::string> args)
+{
+  auto myData = initial_access<std::unique_ptr<int>>();
+
+  create_work([=]{
+    *myData = std::make_unique<int>(42);
+  });
+
+  create_work(reads(myData), [=]{
+      std::cout << (*myData).get() << std::endl;
+  });
+}
+
+DARMA_REGISTER_TOP_LEVEL_FUNCTION(darma_main_task);

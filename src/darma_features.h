@@ -55,6 +55,8 @@
 
 #define _darma_has_feature_publish_fetch 1
 
-#define _darma_has_feature_simple_collectives 0
+#define _darma_has_feature_simple_collectives 1
+
+#define _darma_has_feature_commutative_access_handles 1
 
 #endif //SIMPLECVBACKEND_DARMA_FEATURES_H
