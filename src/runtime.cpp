@@ -755,10 +755,10 @@ void Worker::run_work_loop(size_t n_threads_total) {
   this_worker_id = id;
 
   while(true) {
-    //auto ready = ready_tasks.get_and_pop_front();
+    auto ready = ready_tasks.get_and_pop_front();
     // "Random" version:
-    auto ready = steal_dis(steal_gen) % 2 == 0 ?
-      ready_tasks.get_and_pop_front() : ready_tasks.get_and_pop_back();
+    //auto ready = steal_dis(steal_gen) % 2 == 0 ?
+    //  ready_tasks.get_and_pop_front() : ready_tasks.get_and_pop_back();
 
     // If there are any tasks on the front of our queue, get them
     if(ready) {
@@ -773,11 +773,11 @@ void Worker::run_work_loop(size_t n_threads_total) {
       // pop_front failed because queue was empty; try to do a steal
       auto steal_from = (steal_dis(steal_gen) + id) % n_threads_total;
 
-      //auto new_ready = Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back();
+      auto new_ready = Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back();
       // "Random" version:
-      auto new_ready = steal_dis(steal_gen) % 2 == 0 ?
-        Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back()
-          : Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_front();
+      //auto new_ready = steal_dis(steal_gen) % 2 == 0 ?
+      //  Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back()
+      //    : Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_front();
       if(new_ready) {
         if (new_ready->get() == nullptr) {
           // oops, we stole the termination signal.  Put it back!
