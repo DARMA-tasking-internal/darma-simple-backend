@@ -127,6 +127,14 @@ class Runtime
       assert(false); // not implemented
     }
 
+    void
+    reduce_collection_use(
+      std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_collection_in,
+      std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_out,
+      darma_runtime::abstract::frontend::CollectiveDetails const* details,
+      darma_runtime::types::key_t const& tag
+    ) override;
+
     void* allocate(
       size_t n_bytes,
       darma_runtime::abstract::frontend::MemoryRequirementDetails const&

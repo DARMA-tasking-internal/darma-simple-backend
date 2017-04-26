@@ -721,6 +721,77 @@ void Runtime::allreduce_use(
 
 //==============================================================================
 
+void Runtime::reduce_collection_use(
+  std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_collection_in,
+  std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_out,
+  darma_runtime::abstract::frontend::CollectiveDetails const* details,
+  darma_runtime::types::key_t const&
+) {
+
+  auto in_ctrl_block = std::static_pointer_cast<CollectionControlBlock>(
+    use_collection_in->get_in_flow()->control_block
+  );
+
+  auto* in_coll = darma_runtime::abstract::frontend::use_cast<
+    darma::abstract::frontend::CollectionManagingUse*
+  >(use_collection_in.get())->get_managed_collection();
+
+  // TODO more asynchrony here (i.e., start when indices of prev collection are ready rather than whole)
+
+  // This is a read, so it should only consume and anti-produce flows
+  darma_runtime::types::flow_t in_coll_in_flow(use_collection_in->get_in_flow());
+  in_coll_in_flow->ready_trigger.add_action([
+    this,
+    use_collection_in = std::move(use_collection_in),
+    use_out = std::move(use_out),
+    reduce_op = details->reduce_operation(), in_coll, in_ctrl_block
+  ]() mutable {
+    darma_runtime::types::anti_flow_t out_anti_in_flow(use_out->get_anti_in_flow());
+    out_anti_in_flow->ready_trigger.add_action([
+      this,
+      use_collection_in = std::move(use_collection_in),
+      use_out = std::move(use_out), reduce_op, in_coll, in_ctrl_block
+    ]{
+      use_out->get_handle()->get_serialization_manager()->destroy(
+        use_out->get_in_flow()->control_block->data
+      );
+      use_out->get_handle()->get_serialization_manager()->default_construct(
+        use_out->get_in_flow()->control_block->data
+      );
+      auto* out_data = use_out->get_in_flow()->control_block->data;
+
+      auto array_concept_manager = use_collection_in->get_handle()->get_array_concept_manager();
+
+      for(size_t idx = 0; idx < in_coll->size(); ++idx) {
+        auto in_data = in_ctrl_block->data_for_index(idx);
+        auto nelem = array_concept_manager->n_elements(
+          in_data
+        );
+        reduce_op->reduce_unpacked_into_unpacked(
+          in_data, out_data,
+          0, nelem
+        );
+      }
+
+      release_use(
+        darma_runtime::abstract::frontend::use_cast<
+          darma_runtime::abstract::frontend::UsePendingRelease*
+        >(use_collection_in.get())
+      );
+      release_use(
+        darma_runtime::abstract::frontend::use_cast<
+          darma_runtime::abstract::frontend::UsePendingRelease*
+        >(use_out.get())
+      );
+
+    });
+  });
+
+}
+
+
+//==============================================================================
+
 void Worker::run_task(Runtime::task_unique_ptr&& task) {
 
   // setup data

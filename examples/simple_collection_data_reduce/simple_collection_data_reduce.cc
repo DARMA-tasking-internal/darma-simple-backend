@@ -2,9 +2,9 @@
 //@HEADER
 // ************************************************************************
 //
-//                      darma_features.h
+//              simple_collection_data_reduce.cc
 //                         DARMA
-//              Copyright (C) 2017 Sandia Corporation
+//              Copyright (C) 2016 Sandia Corporation
 //
 // Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
@@ -42,23 +42,50 @@
 //@HEADER
 */
 
-#ifndef SIMPLECVBACKEND_DARMA_FEATURES_H
-#define SIMPLECVBACKEND_DARMA_FEATURES_H
+#include <darma.h>
 
-// Nothing but the flows and uses for now:
-#define _darma_backend_feature_progress_date 20161231
+using namespace darma_runtime;
+using namespace darma::keyword_arguments_for_access_handle_collection;
+using namespace darma_runtime::keyword_arguments_for_collectives;
 
-// But we need anti-flows
-#define _darma_has_feature_anti_flows 1
+struct MyFunctor {
+  void operator()(
+    ConcurrentContext<Index1D<int>> context,
+    int iter, AccessHandleCollection<int, Range1D<int>> data
+  ) const {
+    auto const& index = context.index();
 
-#define _darma_has_feature_create_concurrent_work 1
+    auto handle = data[index].local_access();
 
-#define _darma_has_feature_publish_fetch 1
+    handle.set_value(handle.get_value() + index.value);
+  }
+};
 
-#define _darma_has_feature_simple_collectives 1
+void darma_main_task(std::vector<std::string> args) {
+  using darma_runtime::keyword_arguments_for_create_concurrent_work::index_range;
 
-#define _darma_has_feature_commutative_access_handles 1
+  assert(args.size() == 3);
 
-#define _darma_has_feature_handle_collection_based_collectives 1
+  auto const& num_elems = std::atoi(args[1].c_str());
+  auto const& num_iter = std::atoi(args[2].c_str());
 
-#endif //SIMPLECVBACKEND_DARMA_FEATURES_H
+  auto range = Range1D<int>(num_elems);
+
+  auto data = initial_access_collection<int>(index_range=range);
+
+  for (auto i = 0; i < num_iter; i++) {
+    create_concurrent_work<MyFunctor>(0, data, index_range=range);
+
+    auto result = initial_access<int>();
+
+    data.reduce(output=result);
+
+    create_work(reads(result),[=]{
+      std::cout <<  "i=" << i
+                << ": result = " << result.get_value()
+                << std::endl;
+    });
+  }
+}
+
+DARMA_REGISTER_TOP_LEVEL_FUNCTION(darma_main_task);

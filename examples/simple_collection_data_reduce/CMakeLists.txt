@@ -1,0 +1,2 @@
+add_executable(simple_collection_data_reduce simple_collection_data_reduce.cc)
+target_link_libraries(simple_collection_data_reduce darma_SimpleCV_backend)
