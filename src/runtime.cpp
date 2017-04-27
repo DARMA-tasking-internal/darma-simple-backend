@@ -129,6 +129,8 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
   // keep the workers from shutting down until this task is done
   shutdown_trigger.increment_count();
 
+  tc->set_task_collection_token(std::make_shared<TaskCollectionToken>(tc->size()));
+
   for(size_t i = 0; i < tc->size(); ++i) {
     // Enqueueing another task, so increment shutdown ready_trigger
     shutdown_trigger.increment_count();
@@ -716,7 +718,102 @@ void Runtime::allreduce_use(
   darma_runtime::abstract::frontend::CollectiveDetails const* details,
   darma_runtime::types::key_t const& tag
 ) {
-  assert(false); // TODO implement this
+
+  auto token = details->get_task_collection_token();
+  auto size = token->size;
+  auto* reduce_op = details->reduce_operation();
+  assert(size == details->n_contributions());
+
+  token->collectives.evaluate_or_evaluate_first(tag,
+    //==========================================================================
+    // Evaluated if collective already exists
+    [size, reduce_op, this](
+      std::shared_ptr<TaskCollectionToken::CollectiveInvocation> const& invocation,
+      auto&& use_in_out
+    ) mutable {
+      use_in_out->get_in_flow()->ready_trigger.add_action([
+        // I doubt this actually has to be a weak_ptr, but for easier debugging in case it does:
+        invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation),
+        handle = use_in_out->get_handle(),
+        control_block = use_in_out->get_in_flow()->control_block,
+        reduce_op
+      ]{
+        auto invocation = invocation_ptr.lock();
+        assert(invocation);
+        auto* in_data = control_block->data;
+        auto nelem = handle->get_array_concept_manager()->n_elements(in_data);
+        auto first_use_data = invocation->uses[0]->get_in_flow()->control_block->data;
+        reduce_op->reduce_unpacked_into_unpacked(
+          in_data, first_use_data, 0, nelem
+        );
+        invocation->ready_trigger.decrement_count();
+      });
+      invocation->uses.push_back(std::move(use_in_out));
+    },
+    //==========================================================================
+    // Evaluated if we got here first
+    [size, reduce_op, this, token, tag](
+      std::shared_ptr<TaskCollectionToken::CollectiveInvocation> const& invocation,
+      auto&& use_in_out
+    ) mutable {
+      invocation->result_control_block = use_in_out->get_in_flow()->control_block;
+
+      invocation->ready_trigger.add_action([
+        invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation),
+        this, token, tag
+      ]{
+        auto invocation = invocation_ptr.lock();
+        assert(invocation);
+
+        // TODO use deep copy instead here
+        auto* first_use_data = invocation->uses[0]->get_in_flow()->control_block->data;
+        auto ser_man = invocation->uses[0]->get_handle()->get_serialization_manager();
+        auto ser_pol = darma_runtime::abstract::backend::SerializationPolicy();
+
+        auto packed_size = ser_man->get_packed_data_size(first_use_data, &ser_pol);
+        auto* packed_data = new char[packed_size];
+
+        ser_man->pack_data(first_use_data, packed_data, &ser_pol);
+
+        for(int iuse = 1; iuse < invocation->uses.size(); ++iuse) {
+          auto& u = invocation->uses[iuse];
+          auto* udata = u->get_in_flow()->control_block->data;
+          ser_man->destroy(udata);
+          ser_man->unpack_data(udata, packed_data, &ser_pol);
+        }
+
+        delete[] packed_data;
+
+        for(auto&& use : invocation->uses) {
+          release_use(
+            darma_runtime::abstract::frontend::use_cast<
+              darma_runtime::abstract::frontend::UsePendingRelease*
+            >(use.get())
+          );
+        }
+
+        // TODO ! This would potentially deadlock if there's only one element, since
+        // we're holding a lock to the map from the outer evaluate_or_evaluate_first
+        assert(token->size != 1);
+        token->collectives.erase(tag);
+
+      });
+
+      use_in_out->get_in_flow()->ready_trigger.add_action([
+        invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation)
+      ]{
+        auto invocation = invocation_ptr.lock();
+        assert(invocation);
+        invocation->ready_trigger.decrement_count();
+      });
+
+      invocation->uses.push_back(std::move(use_in_out));
+
+    },
+    //==========================================================================
+    std::forward_as_tuple(std::make_shared<TaskCollectionToken::CollectiveInvocation>(size)),
+    std::move(use_in_out)
+  );
 }
 
 //==============================================================================
@@ -738,7 +835,8 @@ void Runtime::reduce_collection_use(
 
   // TODO more asynchrony here (i.e., start when indices of prev collection are ready rather than whole)
 
-  // This is a read, so it should only consume and anti-produce flows
+  // This is a read, so it should only consume flows and produce anti-flows
+  // of the
   darma_runtime::types::flow_t in_coll_in_flow(use_collection_in->get_in_flow());
   in_coll_in_flow->ready_trigger.add_action([
     this,

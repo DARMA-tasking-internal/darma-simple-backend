@@ -111,6 +111,36 @@ class ConcurrentMap {
       std::forward<Callable>(callable)(data_[key]);
     }
 
+    template <typename Callable, typename FirstCallable, typename EmplaceArgsFwdTuple, typename... Args>
+    void evaluate_or_evaluate_first(
+      Key const& key,
+      Callable&& callable,
+      FirstCallable&& first_callable,
+      EmplaceArgsFwdTuple&& emplace_args,
+      Args&&... args
+    ) {
+      std::lock_guard<std::mutex> lg(mutex_);
+      auto found = data_.find(key);
+      if(found != data_.end()) {
+        std::forward<Callable>(callable)(
+          found->second,
+          std::forward<Args>(args)...
+        );
+      }
+      else {
+        auto spot = data_.emplace_hint(
+          found,
+          std::piecewise_construct,
+          std::forward_as_tuple(key),
+          std::forward<EmplaceArgsFwdTuple>(emplace_args)
+        );
+        std::forward<FirstCallable>(first_callable)(
+          spot->second,
+          std::forward<Args>(args)...
+        );
+      }
+    }
+
     void erase(Key const& key) {
       std::lock_guard<std::mutex> lg(mutex_);
       data_.erase(key);

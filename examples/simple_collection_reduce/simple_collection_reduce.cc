@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      darma_types.h
+//              simple_collection_data_reduce.cc
 //                         DARMA
 //              Copyright (C) 2016 Sandia Corporation
 //
@@ -42,28 +42,48 @@
 //@HEADER
 */
 
-#ifndef HPX5_DARMA_TYPES_H
-#define HPX5_DARMA_TYPES_H
+#include <darma.h>
 
-#include <memory>
+using namespace darma_runtime;
+using namespace darma::keyword_arguments_for_access_handle_collection;
+using namespace darma_runtime::keyword_arguments_for_collectives;
 
-#include "simple_backend_fwd.hpp"
+struct MyFunctor {
+  void operator()(
+    ConcurrentContext<Index1D<int>> context,
+    int iter, AccessHandleCollection<int, Range1D<int>> data
+  ) const {
+    auto const& index = context.index();
 
-#include <darma/impl/key/SSO_key_fwd.h>
+    auto handle = data[index].local_access();
 
-namespace darma_runtime {
-namespace types {
+    handle.set_value(handle.get_value() + index.value);
 
-using flow_t = std::shared_ptr<simple_backend::Flow>;
-using anti_flow_t = std::shared_ptr<simple_backend::AntiFlow>;
+    context.allreduce(in_out=handle);
 
-using key_t = detail::SSOKey<>;
+    create_work(reads(handle),[=]{
+      std::cout <<  "i=" << iter
+                << ": result = " << handle.get_value()
+                << std::endl;
+    });
+  }
+};
 
-using resource_pack_t = int; // not used for now, but not feature-tag protected like it should be
+void darma_main_task(std::vector<std::string> args) {
+  using darma_runtime::keyword_arguments_for_create_concurrent_work::index_range;
 
-using task_collection_token_t = std::shared_ptr<simple_backend::TaskCollectionToken>;
+  assert(args.size() == 3);
 
-} // end namespace types
-} // end namespace darma_runtime
+  auto const& num_elems = std::atoi(args[1].c_str());
+  auto const& num_iter = std::atoi(args[2].c_str());
 
-#endif // HPX5_DARMA_TYPES_H
+  auto range = Range1D<int>(num_elems);
+
+  auto data = initial_access_collection<int>(index_range=range);
+
+  for (auto i = 0; i < num_iter; i++) {
+    create_concurrent_work<MyFunctor>(i, data, index_range=range);
+  }
+}
+
+DARMA_REGISTER_TOP_LEVEL_FUNCTION(darma_main_task);

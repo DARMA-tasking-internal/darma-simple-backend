@@ -61,4 +61,6 @@
 
 #define _darma_has_feature_handle_collection_based_collectives 1
 
+#define _darma_has_feature_task_collection_token 1
+
 #endif //SIMPLECVBACKEND_DARMA_FEATURES_H

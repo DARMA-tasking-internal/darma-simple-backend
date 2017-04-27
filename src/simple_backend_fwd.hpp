@@ -50,6 +50,7 @@ namespace simple_backend {
 struct Flow;
 struct AntiFlow;
 struct Worker;
+struct TaskCollectionToken;
 
 } // end namespace simple_backend
 

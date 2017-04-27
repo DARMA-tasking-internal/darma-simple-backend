@@ -171,6 +171,32 @@ struct AntiFlow {
   CountdownTrigger<MultiActionList> ready_trigger;
 };
 
+
+struct TaskCollectionToken {
+
+  struct CollectiveInvocation {
+    CollectiveInvocation(size_t n_contribs)
+      : uses(),
+        ready_trigger(n_contribs)
+    {
+      uses.reserve(n_contribs);
+    }
+    CountdownTrigger<SingleAction> ready_trigger;
+    std::shared_ptr<ControlBlock> result_control_block = { nullptr };
+    std::vector<std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>> uses;
+  };
+
+  TaskCollectionToken(size_t in_size) : size(in_size) { }
+  size_t size;
+
+  ConcurrentMap<darma_runtime::types::key_t,
+    // Could probably be a unique_ptr...
+    std::shared_ptr<CollectiveInvocation> const&
+  > collectives;
+
+};
+
+
 } // end namespace simple_backend
 
 #endif //DARMASIMPLECVBACKEND_FLOW_HPP
