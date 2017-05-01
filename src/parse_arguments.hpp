@@ -2,9 +2,9 @@
 //@HEADER
 // ************************************************************************
 //
-//              simple_collection_data_reduce.cc
+//                      parse_arguments.hpp
 //                         DARMA
-//              Copyright (C) 2016 Sandia Corporation
+//              Copyright (C) 2017 Sandia Corporation
 //
 // Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
@@ -42,55 +42,25 @@
 //@HEADER
 */
 
-#include <darma.h>
+#ifndef DARMASIMPLECVBACKEND_PARSE_ARGUMENTS_HPP
+#define DARMASIMPLECVBACKEND_PARSE_ARGUMENTS_HPP
 
-using namespace darma_runtime;
-using namespace darma::keyword_arguments_for_access_handle_collection;
-using namespace darma_runtime::keyword_arguments_for_collectives;
+#include <vector>
+#include <string>
 
-struct MyFunctor {
-  void operator()(
-    ConcurrentContext<Index1D<int>> context,
-    int iter, AccessHandleCollection<int, Range1D<int>> data
-  ) const {
-    auto const& index = context.index();
+namespace simple_backend {
 
-    auto handle = data[index].local_access();
-    //auto handle = initial_access<int>();
+struct SimpleBackendOptions {
 
-    handle.set_value(handle.get_value() + index.value);
-    //create_work([=]{
-    //  handle.set_value(index.value);
-    //});
+  public:
 
-    //context.allreduce(in_out=handle);
-    //create_work([=]{ handle.set_value(handle.get_value() + index.value); });
+    std::vector<std::string> parse_args(int argc, char** argv);
 
-    if(index.value == 1) {
-      create_work(reads(handle), [=] {
-        std::cout << "i=" << iter
-                  << ": result = " << handle.get_value()
-                  << std::endl;
-      });
-    }
-  }
+    std::size_t n_threads;
+    std::size_t lookahead;
+
 };
 
-void darma_main_task(std::vector<std::string> args) {
-  using darma_runtime::keyword_arguments_for_create_concurrent_work::index_range;
+} // end namespace simple_backend
 
-  assert(args.size() == 3);
-
-  auto const& num_elems = std::atoi(args[1].c_str());
-  auto const& num_iter = std::atoi(args[2].c_str());
-
-  auto range = Range1D<int>(num_elems);
-
-  auto data = initial_access_collection<int>(index_range=range);
-
-  for (auto i = 0; i < num_iter; i++) {
-    create_concurrent_work<MyFunctor>(i, data, index_range=range);
-  }
-}
-
-DARMA_REGISTER_TOP_LEVEL_FUNCTION(darma_main_task);
+#endif //DARMASIMPLECVBACKEND_PARSE_ARGUMENTS_HPP

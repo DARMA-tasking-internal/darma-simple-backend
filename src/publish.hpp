@@ -76,7 +76,7 @@ class ConcurrentMap {
 
     // Just put locks around everything for now.  We'll do something faster
     // some other time
-    std::mutex mutex_;
+    std::recursive_mutex mutex_;
 
     std::unordered_map<Key, Value, Hasher, Equal> data_;
 
@@ -87,7 +87,7 @@ class ConcurrentMap {
       Callable&& callable,
       Args&&... args
     ) {
-      std::lock_guard<std::mutex> lg(mutex_);
+      std::lock_guard<std::recursive_mutex> lg(mutex_);
       auto found = data_.find(key);
       if(found != data_.end()) {
         std::forward<Callable>(callable)(found->second);
@@ -107,7 +107,7 @@ class ConcurrentMap {
       Key const& key,
       Callable&& callable
     ) {
-      std::lock_guard<std::mutex> lg(mutex_);
+      std::lock_guard<std::recursive_mutex> lg(mutex_);
       std::forward<Callable>(callable)(data_[key]);
     }
 
@@ -119,9 +119,10 @@ class ConcurrentMap {
       EmplaceArgsFwdTuple&& emplace_args,
       Args&&... args
     ) {
-      std::lock_guard<std::mutex> lg(mutex_);
+      std::lock_guard<std::recursive_mutex> lg(mutex_);
       auto found = data_.find(key);
       if(found != data_.end()) {
+        assert(data_.size() > 0);
         std::forward<Callable>(callable)(
           found->second,
           std::forward<Args>(args)...
@@ -142,7 +143,7 @@ class ConcurrentMap {
     }
 
     void erase(Key const& key) {
-      std::lock_guard<std::mutex> lg(mutex_);
+      std::lock_guard<std::recursive_mutex> lg(mutex_);
       data_.erase(key);
     }
 };

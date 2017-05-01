@@ -54,6 +54,8 @@
 #include "worker.hpp"
 #include "flow.hpp"
 
+#include "parse_arguments.hpp"
+
 namespace simple_backend {
 
 class Runtime

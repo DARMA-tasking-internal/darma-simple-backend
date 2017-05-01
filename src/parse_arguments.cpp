@@ -2,9 +2,9 @@
 //@HEADER
 // ************************************************************************
 //
-//              simple_collection_data_reduce.cc
+//                      parse_arguments.cpp
 //                         DARMA
-//              Copyright (C) 2016 Sandia Corporation
+//              Copyright (C) 2017 Sandia Corporation
 //
 // Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
@@ -42,55 +42,47 @@
 //@HEADER
 */
 
-#include <darma.h>
+#include <cassert>
+#include <cstdlib>
+#include "parse_arguments.hpp"
 
-using namespace darma_runtime;
-using namespace darma::keyword_arguments_for_access_handle_collection;
-using namespace darma_runtime::keyword_arguments_for_collectives;
 
-struct MyFunctor {
-  void operator()(
-    ConcurrentContext<Index1D<int>> context,
-    int iter, AccessHandleCollection<int, Range1D<int>> data
-  ) const {
-    auto const& index = context.index();
+using namespace simple_backend;
 
-    auto handle = data[index].local_access();
-    //auto handle = initial_access<int>();
+static constexpr size_t n_threads_default = 8;
+static constexpr size_t lookahead_default = 20;
 
-    handle.set_value(handle.get_value() + index.value);
-    //create_work([=]{
-    //  handle.set_value(index.value);
-    //});
+std::vector<std::string> SimpleBackendOptions::parse_args(
+  int argc, char** argv
+) {
+  int spot = 1;
 
-    //context.allreduce(in_out=handle);
-    //create_work([=]{ handle.set_value(handle.get_value() + index.value); });
+  n_threads = n_threads_default;
+  lookahead = lookahead_default;
 
-    if(index.value == 1) {
-      create_work(reads(handle), [=] {
-        std::cout << "i=" << iter
-                  << ": result = " << handle.get_value()
-                  << std::endl;
-      });
+  auto rv = std::vector<std::string>();
+  rv.emplace_back(argv[0]);
+
+  while(spot < argc) {
+    std::string arg(argv[spot]);
+
+    // TODO more sophisticated mechanism here
+
+    if(arg == "--backend-n-workers") {
+      assert(spot + 1 < argc);
+      n_threads = std::atoi(argv[++spot]);
     }
+    else if(arg == "--backend-lookahead") {
+      assert(spot + 1 < argc);
+      lookahead = std::atoi(argv[++spot]);
+    }
+    // TODO more options
+    else {
+      rv.push_back(arg);
+    }
+
+    ++spot;
   }
-};
 
-void darma_main_task(std::vector<std::string> args) {
-  using darma_runtime::keyword_arguments_for_create_concurrent_work::index_range;
-
-  assert(args.size() == 3);
-
-  auto const& num_elems = std::atoi(args[1].c_str());
-  auto const& num_iter = std::atoi(args[2].c_str());
-
-  auto range = Range1D<int>(num_elems);
-
-  auto data = initial_access_collection<int>(index_range=range);
-
-  for (auto i = 0; i < num_iter; i++) {
-    create_concurrent_work<MyFunctor>(i, data, index_range=range);
-  }
+  return rv;
 }
-
-DARMA_REGISTER_TOP_LEVEL_FUNCTION(darma_main_task);

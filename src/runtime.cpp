@@ -53,9 +53,6 @@
 
 #include <darma.h>
 
-static constexpr size_t n_threads_default = 8;
-static constexpr size_t lookahead_default = 20;
-
 using namespace simple_backend;
 
 std::unique_ptr<Runtime> Runtime::instance = nullptr;
@@ -65,11 +62,16 @@ static thread_local std::size_t this_worker_id = 0;
 
 void
 Runtime::initialize_top_level_instance(int argc, char** argv) {
-  // TODO parse number of threads out of command line arguments
-  auto top_level_task = darma_runtime::frontend::darma_top_level_setup(argc, argv);
+
+  SimpleBackendOptions options;
+
+  auto top_level_task = darma_runtime::frontend::darma_top_level_setup(
+    options.parse_args(argc, argv)
+  );
+
   instance = std::make_unique<Runtime>(std::move(top_level_task),
-    n_threads_default,
-    lookahead_default
+    options.n_threads,
+    options.lookahead
   );
 }
 
@@ -407,6 +409,11 @@ Runtime::register_use(use_pending_registration_t* use) {
       anti_out_flow = nullptr;
       break;
     }
+    case FlowRelationship::Initial :
+    case FlowRelationship::InitialCollection : {
+      anti_out_flow = std::make_shared<AntiFlow>();
+      break;
+    }
     case FlowRelationship::Same :
     case FlowRelationship::SameCollection : {
       assert(anti_out_rel.related_anti_flow());
@@ -415,8 +422,9 @@ Runtime::register_use(use_pending_registration_t* use) {
     }
     case FlowRelationship::AntiNext :
     case FlowRelationship::AntiNextCollection : {
-      assert(anti_out_related_flow);
-      anti_out_flow = std::make_shared<AntiFlow>();
+      assert(anti_out_related_anti_flow);
+      assert(*anti_out_related_anti_flow);
+      anti_out_flow = std::make_shared<AntiFlow>(*anti_out_related_anti_flow);
       break;
     }
     case FlowRelationship::AntiIndexedLocal : {
@@ -426,10 +434,25 @@ Runtime::register_use(use_pending_registration_t* use) {
         auto anti_out_flow_related = *anti_out_related_anti_flow;
         anti_out_flow_related->ready_trigger.increment_count();
         anti_out_flow = std::make_shared<AntiFlow>();
-        out_flow->ready_trigger.add_action([anti_out_flow_related] {
+        anti_out_flow->ready_trigger.add_action([anti_out_flow_related] {
           anti_out_flow_related->ready_trigger.decrement_count();
         });
       }
+      break;
+    }
+    case FlowRelationship::AntiForwarding : {
+      assert(anti_out_related_anti_flow);
+      assert(*anti_out_related_anti_flow);
+      // TODO make this more scalable by seperating these actions into a delegatable action list or something
+      auto anti_out_related = *anti_out_related_anti_flow;
+      // Pass on any forwarding relationships of the source
+      anti_out_flow = std::make_shared<AntiFlow>(anti_out_related);
+      // and create a forwarding relationship in this anti-out flow
+      anti_out_flow->forwarded_from = anti_out_related;
+      anti_out_related->ready_trigger.increment_count();
+      anti_out_flow->ready_trigger.add_action([anti_out_related]{
+        anti_out_related->ready_trigger.decrement_count();
+      });
       break;
     }
     case FlowRelationship::AntiIndexedFetching : {
@@ -727,15 +750,18 @@ void Runtime::allreduce_use(
   token->collectives.evaluate_or_evaluate_first(tag,
     //==========================================================================
     // Evaluated if collective already exists
-    [size, reduce_op, this](
+    [size, reduce_op, this, token](
       std::shared_ptr<TaskCollectionToken::CollectiveInvocation> const& invocation,
       auto&& use_in_out
     ) mutable {
-      use_in_out->get_in_flow()->ready_trigger.add_action([
+
+      invocation->uses.push_back(std::move(use_in_out));
+
+      invocation->uses.back()->get_in_flow()->ready_trigger.add_action([
         // I doubt this actually has to be a weak_ptr, but for easier debugging in case it does:
         invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation),
-        handle = use_in_out->get_handle(),
-        control_block = use_in_out->get_in_flow()->control_block,
+        handle = invocation->uses.back()->get_handle(),
+        control_block = invocation->uses.back()->get_in_flow()->control_block,
         reduce_op
       ]{
         auto invocation = invocation_ptr.lock();
@@ -748,7 +774,20 @@ void Runtime::allreduce_use(
         );
         invocation->ready_trigger.decrement_count();
       });
-      invocation->uses.push_back(std::move(use_in_out));
+
+      if(invocation->uses.back()->get_anti_in_flow()) {
+        invocation->uses.back()->get_anti_in_flow()->ready_trigger.add_action([
+          invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation)
+        ]{
+          auto invocation = invocation_ptr.lock();
+          assert(invocation);
+          invocation->ready_trigger.decrement_count();
+        });
+      }
+      else {
+        invocation->ready_trigger.decrement_count();
+      }
+
     },
     //==========================================================================
     // Evaluated if we got here first
@@ -756,6 +795,7 @@ void Runtime::allreduce_use(
       std::shared_ptr<TaskCollectionToken::CollectiveInvocation> const& invocation,
       auto&& use_in_out
     ) mutable {
+      assert(invocation);
       invocation->result_control_block = use_in_out->get_in_flow()->control_block;
 
       invocation->ready_trigger.add_action([
@@ -807,6 +847,19 @@ void Runtime::allreduce_use(
         invocation->ready_trigger.decrement_count();
       });
 
+      if(use_in_out->get_anti_in_flow()) {
+        use_in_out->get_anti_in_flow()->ready_trigger.add_action([
+          invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation)
+        ]{
+          auto invocation = invocation_ptr.lock();
+          assert(invocation);
+          invocation->ready_trigger.decrement_count();
+        });
+      }
+      else {
+        invocation->ready_trigger.decrement_count();
+      }
+
       invocation->uses.push_back(std::move(use_in_out));
 
     },
@@ -824,6 +877,8 @@ void Runtime::reduce_collection_use(
   darma_runtime::abstract::frontend::CollectiveDetails const* details,
   darma_runtime::types::key_t const&
 ) {
+  assert(use_collection_in->manages_collection());
+  assert(not use_out->manages_collection());
 
   auto in_ctrl_block = std::static_pointer_cast<CollectionControlBlock>(
     use_collection_in->get_in_flow()->control_block

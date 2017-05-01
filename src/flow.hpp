@@ -166,9 +166,22 @@ struct Flow {
 struct AntiFlow {
   AntiFlow() : ready_trigger(0) { }
 
+  AntiFlow(std::shared_ptr<AntiFlow> other)
+    : ready_trigger(0)
+  {
+    if(other->forwarded_from) {
+      forwarded_from = other->forwarded_from;
+      other->forwarded_from->ready_trigger.increment_count();
+      ready_trigger.add_action([other_forwarded_from = other->forwarded_from]{
+        other_forwarded_from->ready_trigger.decrement_count();
+      });
+    }
+  }
+
   AntiFlow(size_t initial_count) : ready_trigger(initial_count) { }
 
   CountdownTrigger<MultiActionList> ready_trigger;
+  std::shared_ptr<AntiFlow> forwarded_from = { nullptr };
 };
 
 
@@ -177,7 +190,7 @@ struct TaskCollectionToken {
   struct CollectiveInvocation {
     CollectiveInvocation(size_t n_contribs)
       : uses(),
-        ready_trigger(n_contribs)
+        ready_trigger(n_contribs*2) // in and anti-in for each contribution
     {
       uses.reserve(n_contribs);
     }
@@ -191,7 +204,7 @@ struct TaskCollectionToken {
 
   ConcurrentMap<darma_runtime::types::key_t,
     // Could probably be a unique_ptr...
-    std::shared_ptr<CollectiveInvocation> const&
+    std::shared_ptr<CollectiveInvocation>
   > collectives;
 
 };

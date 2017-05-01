@@ -13,11 +13,47 @@ void darma_main_task(std::vector<std::string> args) {
 
   create_work([=]{
     *i = 42;
+    create_work([=]{
+      std::cout << "Nested Hello World, should be 42: " << *i << std::endl;
+      *i = 35;
+    });
+    create_work([=]{
+      std::cout << "Nested Hello World, should be 35: " << *i << std::endl;
+      *i = 27;
+    });
+    create_work(reads(i), [=]{
+      std::cout << "Nested Hello World, should be 27: " << *i << std::endl;
+    });
   });
 
   create_work([=]{
-    std::cout << "Hello World " << *i << std::endl;
+    std::cout << "Hello World, should be 27: " << *i << std::endl;
+    *i = 33;
+    std::cout << "Hello World, should be 33: " << *i << std::endl;
   });
+
+  create_work([=]{
+    *i = 1;
+    create_work([=]{
+      create_work([=]{
+        create_work([=]{
+          create_work([=]{
+            create_work(reads(i), [=]{
+              std::cout << "Nested Hello World, should be 1: " << *i << std::endl;
+            });
+          });
+        });
+      });
+    });
+  });
+
+  create_work([=]{
+    std::cout << "Hello World, should be 1: " << *i << std::endl;
+    *i = 2;
+    std::cout << "Hello World, should be 2: " << *i << std::endl;
+  });
+
+
 
 }
 
