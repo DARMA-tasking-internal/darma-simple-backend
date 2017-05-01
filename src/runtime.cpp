@@ -230,7 +230,7 @@ Runtime::register_use(use_pending_registration_t* use) {
       in_flow = std::make_shared<Flow>(
         std::make_shared<ControlBlock>(
           coll_cntrl->data_for_index(in_rel.index()),
-          coll_cntrl.get(),
+          coll_cntrl,
           in_rel.index()
         ),
         1 // start with a count so that the collection flow can make it ready
@@ -429,15 +429,13 @@ Runtime::register_use(use_pending_registration_t* use) {
     }
     case FlowRelationship::AntiIndexedLocal : {
       assert(anti_out_related_anti_flow);
-      // Only create an indexed local version if the collection flow isn't insignificant
-      if(*anti_out_related_anti_flow) {
-        auto anti_out_flow_related = *anti_out_related_anti_flow;
-        anti_out_flow_related->ready_trigger.increment_count();
-        anti_out_flow = std::make_shared<AntiFlow>();
-        anti_out_flow->ready_trigger.add_action([anti_out_flow_related] {
-          anti_out_flow_related->ready_trigger.decrement_count();
-        });
-      }
+      assert(*anti_out_related_anti_flow);
+      auto anti_out_flow_related = *anti_out_related_anti_flow;
+      anti_out_flow_related->ready_trigger.increment_count();
+      anti_out_flow = std::make_shared<AntiFlow>();
+      anti_out_flow->ready_trigger.add_action([anti_out_flow_related] {
+        anti_out_flow_related->ready_trigger.decrement_count();
+      });
       break;
     }
     case FlowRelationship::AntiForwarding : {
@@ -530,7 +528,7 @@ Runtime::publish_use(
 ) {
   assert(pub_use->get_in_flow()->control_block->parent_collection);
 
-  auto* parent_cntrl = pub_use->get_in_flow()->control_block->parent_collection;
+  auto parent_cntrl = pub_use->get_in_flow()->control_block->parent_collection;
 
   parent_cntrl->current_published_entries.evaluate_at(
     std::make_pair(
@@ -864,7 +862,7 @@ void Runtime::allreduce_use(
 
     },
     //==========================================================================
-    std::forward_as_tuple(std::make_shared<TaskCollectionToken::CollectiveInvocation>(size)),
+    std::forward_as_tuple(std::make_shared<TaskCollectionToken::CollectiveInvocation>(2*size)),
     std::move(use_in_out)
   );
 }

@@ -48,6 +48,12 @@ using namespace darma_runtime;
 using namespace darma::keyword_arguments_for_access_handle_collection;
 using namespace darma_runtime::keyword_arguments_for_collectives;
 
+struct MyLeaf {
+  void operator()(int& val, int idx) const {
+    val += idx + 1;
+  }
+};
+
 struct MyFunctor {
   void operator()(
     ConcurrentContext<Index1D<int>> context,
@@ -55,20 +61,28 @@ struct MyFunctor {
   ) const {
     auto const& index = context.index();
 
+    if(index.value == 1) {
+
+      std::cout << "running iteration i=" << iter << " on index " << index.value
+                << std::endl;
+    }
+
     auto handle = data[index].local_access();
     //auto handle = initial_access<int>();
 
-    handle.set_value(handle.get_value() + index.value);
+    handle.set_value(handle.get_value() + index.value + 1);
     //create_work([=]{
     //  handle.set_value(index.value);
     //});
+    //create_work<MyLeaf>(handle, index.value);
 
-    //context.allreduce(in_out=handle);
-    //create_work([=]{ handle.set_value(handle.get_value() + index.value); });
+
+    context.allreduce(in_out=handle);
 
     if(index.value == 1) {
       create_work(reads(handle), [=] {
         std::cout << "i=" << iter
+                  << " on " << index.value
                   << ": result = " << handle.get_value()
                   << std::endl;
       });

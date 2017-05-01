@@ -84,7 +84,7 @@ struct ControlBlock {
     ) : handle(in_handle), data(in_data), owns_data(false)
     { }
 
-    ControlBlock(void* in_data, CollectionControlBlock* parent_coll, std::size_t collection_index)
+    ControlBlock(void* in_data, std::shared_ptr<CollectionControlBlock> parent_coll, std::size_t collection_index)
       : handle(nullptr), data(in_data), owns_data(false),
         parent_collection(parent_coll), collection_index(collection_index)
     { }
@@ -99,7 +99,8 @@ struct ControlBlock {
     std::shared_ptr<darma_runtime::abstract::frontend::Handle const> handle;
     void* data = nullptr;
     bool owns_data = true;
-    CollectionControlBlock* parent_collection = nullptr;
+    // TODO make sure this is safe
+    std::shared_ptr<CollectionControlBlock> parent_collection = nullptr;
     std::size_t collection_index = 0;
 };
 
@@ -190,7 +191,7 @@ struct TaskCollectionToken {
   struct CollectiveInvocation {
     CollectiveInvocation(size_t n_contribs)
       : uses(),
-        ready_trigger(n_contribs*2) // in and anti-in for each contribution
+        ready_trigger(n_contribs) // in and anti-in for each contribution
     {
       uses.reserve(n_contribs);
     }
