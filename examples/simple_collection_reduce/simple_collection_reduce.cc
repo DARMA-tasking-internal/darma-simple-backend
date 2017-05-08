@@ -61,7 +61,7 @@ struct MyFunctor {
   ) const {
     auto const& index = context.index();
 
-    if(index.value == 1) {
+    if(index.value == 0) {
 
       std::cout << "running iteration i=" << iter << " on index " << index.value
                 << std::endl;
@@ -70,16 +70,16 @@ struct MyFunctor {
     auto handle = data[index].local_access();
     //auto handle = initial_access<int>();
 
-    handle.set_value(handle.get_value() + index.value + 1);
+    //handle.set_value(handle.get_value() + index.value + 1);
     //create_work([=]{
     //  handle.set_value(index.value);
     //});
-    //create_work<MyLeaf>(handle, index.value);
+    create_work<MyLeaf>(handle, index.value);
 
 
     context.allreduce(in_out=handle);
 
-    if(index.value == 1) {
+    if(index.value == 0) {
       create_work(reads(handle), [=] {
         std::cout << "i=" << iter
                   << " on " << index.value

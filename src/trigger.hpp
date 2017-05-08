@@ -209,6 +209,12 @@ class CountdownTrigger {
         actions_.do_actions();
       }
     }
+
+    // For approximate debugging purposes only
+    std::size_t get_count() const { return count_.load(); }
+
+    // For approximate debugging purposes only
+    bool get_triggered() const { return triggered_.load(); }
 };
 
 template <typename ActionList>

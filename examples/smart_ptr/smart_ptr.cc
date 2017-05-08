@@ -53,21 +53,21 @@ namespace darma_runtime {
 namespace serialization {
 
 template <typename T>
-struct Serializer<std::unique_ptr<T>> {
+struct Serializer<std::shared_ptr<T>> {
 
   static_assert(std::is_move_constructible<T>::value,
-    "can't serialize a unique_ptr to a non-move constructible type"
+    "can't serialize a shared_ptr to a non-move constructible type"
   );
   static_assert(std::is_default_constructible<T>::value,
-    "can't serialize a unique_ptr to a non-default constructible type"
+    "can't serialize a shared_ptr to a non-default constructible type"
   );
 
   template <typename ArchiveT>
-  void serialize(std::unique_ptr<T>& val_ptr, ArchiveT& ar) {
+  void serialize(std::shared_ptr<T>& val_ptr, ArchiveT& ar) {
     if(ar.is_unpacking()) {
       T val;
       ar >> val;
-      val_ptr = std::make_unique<T>(std::move(val));
+      val_ptr = std::make_shared<T>(std::move(val));
     }
     else {
       ar | (*val_ptr);
@@ -82,14 +82,14 @@ struct Serializer<std::unique_ptr<T>> {
 
 void darma_main_task(std::vector<std::string> args)
 {
-  auto myData = initial_access<std::unique_ptr<int>>();
+  auto myData = initial_access<std::shared_ptr<int>>();
 
   create_work([=]{
-    *myData = std::make_unique<int>(42);
+    *myData = std::make_shared<int>(42);
   });
 
   create_work(reads(myData), [=]{
-      std::cout << (*myData).get() << std::endl;
+      std::cout << (*(*myData).get()) << std::endl;
   });
 }
 

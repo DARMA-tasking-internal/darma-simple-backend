@@ -44,11 +44,47 @@
 
 
 #include "runtime.hpp"
+#include "debug.hpp"
+
+#if SIMPLE_BACKEND_DEBUG
+
+#include <signal.h>
+#include <csignal>
+#include <unistd.h>
+
+std::unique_ptr<simple_backend::DebugWorker>
+simple_backend::DebugWorker::instance = std::make_unique<simple_backend::DebugWorker>();
+
+extern "C" {
+void sig_usr2_handler(int signal) {
+  simple_backend::DebugWorker::instance->empty_queue_actions.emplace_back(
+    ::simple_backend::make_debug_action_ptr([](auto& state){
+      ::simple_backend::DebugState::print_state(state);
+    })
+  );
+}
+} // end extern "C"
+#endif
 
 int main(int argc, char** argv) {
+
+#if SIMPLE_BACKEND_DEBUG
+
+  std::cout << "Running program with simple debug backend enabled.  Send signal SIGUSR2"
+    " to process " << std::to_string(getpid()) << " to introspect state." << std::endl;
+  std::signal(SIGUSR2, sig_usr2_handler);
+
+
+  simple_backend::DebugWorker::instance->spawn_work_loop();
+#endif
 
   simple_backend::Runtime::initialize_top_level_instance(argc, argv);
   simple_backend::Runtime::instance->spin_up_worker_threads();
   simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
+
+#if SIMPLE_BACKEND_DEBUG
+  simple_backend::DebugWorker::instance->actions.emplace_back(nullptr);
+  simple_backend::DebugWorker::instance->worker_thread->join();
+#endif
 
 }

@@ -48,6 +48,7 @@
 #include "flow.hpp"
 #include "worker.hpp"
 #include "util.hpp"
+#include "debug.hpp"
 
 #include <darma/interface/frontend/top_level.h>
 
@@ -171,6 +172,9 @@ Runtime::spin_up_worker_threads()
 void
 Runtime::register_use(use_pending_registration_t* use) {
   using namespace darma_runtime::abstract::frontend; // FlowRelationship
+
+  // TODO make this debugging work again
+  //_SIMPLE_DBG_DO([use](auto& state) { state.add_registered_use(use); });
 
   //----------------------------------------------------------------------------
   // <editor-fold desc="in flow relationship"> {{{2
@@ -302,7 +306,27 @@ Runtime::register_use(use_pending_registration_t* use) {
       anti_in_flow = *anti_in_rel.related_anti_flow();
       break;
     }
-    case FlowRelationship::AntiIndexedLocal : {
+    case FlowRelationship::Next : {
+      assert(anti_in_rel.related_anti_flow());
+      // The related anti-flow is unused for now, but we should still assert that it's there
+      anti_in_flow = std::make_shared<AntiFlow>();
+      break;
+    }
+    case FlowRelationship::Forwarding : {
+      assert(anti_in_rel.related_anti_flow());
+      // The related anti-flow is unused for now, but we should still assert that it's there
+      assert(*anti_in_rel.related_anti_flow());
+      anti_in_flow = std::make_shared<AntiFlow>(
+        1 // start with a count so that the flow we forwarded it from can make it ready
+      );
+      // The forwarded is anti-flow actually ready as soon as it's created, even
+      // though the related anti-flow will not be ready (since it needs to be held
+      // by the continuation for the purposes of the outer scope anti-dependency).
+      // We should decrement the count here to make the new anti-flow ready now:
+      anti_in_flow->ready_trigger.decrement_count();
+      break;
+    }
+    case FlowRelationship::IndexedLocal : {
       assert(anti_in_rel.related_anti_flow());
       // Only create an indexed local version if the collection flow isn't insignificant
       if(*anti_in_rel.related_anti_flow()) {
@@ -322,6 +346,9 @@ Runtime::register_use(use_pending_registration_t* use) {
   } // end switch over anti-in flow relationship
 
   use->set_anti_in_flow(anti_in_flow);
+  if(anti_in_flow and not use->will_be_dependency()) {
+    anti_in_flow->ready_trigger.increment_count();
+  }
 
   // </editor-fold> end in flow relationship }}}2
   //----------------------------------------------------------------------------
@@ -420,14 +447,15 @@ Runtime::register_use(use_pending_registration_t* use) {
       anti_out_flow = *anti_out_related_anti_flow;
       break;
     }
-    case FlowRelationship::AntiNext :
-    case FlowRelationship::AntiNextCollection : {
+    case FlowRelationship::Next :
+    case FlowRelationship::NextCollection : {
       assert(anti_out_related_anti_flow);
       assert(*anti_out_related_anti_flow);
-      anti_out_flow = std::make_shared<AntiFlow>(*anti_out_related_anti_flow);
+      // The related anti-flow is unused for now, but we should still assert that it's there
+      anti_out_flow = std::make_shared<AntiFlow>();
       break;
     }
-    case FlowRelationship::AntiIndexedLocal : {
+    case FlowRelationship::IndexedLocal : {
       assert(anti_out_related_anti_flow);
       assert(*anti_out_related_anti_flow);
       auto anti_out_flow_related = *anti_out_related_anti_flow;
@@ -438,22 +466,7 @@ Runtime::register_use(use_pending_registration_t* use) {
       });
       break;
     }
-    case FlowRelationship::AntiForwarding : {
-      assert(anti_out_related_anti_flow);
-      assert(*anti_out_related_anti_flow);
-      // TODO make this more scalable by seperating these actions into a delegatable action list or something
-      auto anti_out_related = *anti_out_related_anti_flow;
-      // Pass on any forwarding relationships of the source
-      anti_out_flow = std::make_shared<AntiFlow>(anti_out_related);
-      // and create a forwarding relationship in this anti-out flow
-      anti_out_flow->forwarded_from = anti_out_related;
-      anti_out_related->ready_trigger.increment_count();
-      anti_out_flow->ready_trigger.add_action([anti_out_related]{
-        anti_out_related->ready_trigger.decrement_count();
-      });
-      break;
-    }
-    case FlowRelationship::AntiIndexedFetching : {
+    case FlowRelationship::IndexedFetching : {
       // We need to get the published entries from the in flow
       assert(in_rel.related_flow());
       auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(
@@ -496,6 +509,9 @@ Runtime::register_use(use_pending_registration_t* use) {
 void
 Runtime::release_use(use_pending_release_t* use) {
 
+  // TODO make this debugging work again
+  //_SIMPLE_DBG_DO([use](auto& state) { state.remove_registered_use(use); });
+
   if(use->establishes_alias()) {
     assert(use->get_in_flow() and use->get_out_flow());
     auto& out_flow = use->get_out_flow();
@@ -507,6 +523,19 @@ Runtime::release_use(use_pending_release_t* use) {
     use->get_in_flow()->ready_trigger.add_action([out_flow]{
       out_flow->ready_trigger.decrement_count();
     });
+
+    if(use->get_anti_in_flow()) {
+      auto anti_in_flow = use->get_anti_in_flow();
+      anti_in_flow->ready_trigger.increment_count();
+      use->get_anti_out_flow()->ready_trigger.add_action([anti_in_flow]{
+        anti_in_flow->ready_trigger.decrement_count();
+      });
+    }
+
+  }
+
+  if(not use->was_dependency() and use->get_anti_in_flow()) {
+    use->get_anti_in_flow()->ready_trigger.decrement_count();
   }
 
   if(use->get_out_flow()) use->get_out_flow()->ready_trigger.decrement_count();

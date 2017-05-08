@@ -33,6 +33,12 @@ include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}/src
 )
 
+option(ENABLE_BACKEND_DEBUGGING "Whether to turn on debugging features for the backend itself" Off)
+
+if(ENABLE_BACKEND_DEBUGGING)
+    add_definitions(-DSIMPLE_BACKEND_DEBUG)
+endif()
+
 add_subdirectory(src)
 add_subdirectory(examples)
 

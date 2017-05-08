@@ -167,18 +167,6 @@ struct Flow {
 struct AntiFlow {
   AntiFlow() : ready_trigger(0) { }
 
-  AntiFlow(std::shared_ptr<AntiFlow> other)
-    : ready_trigger(0)
-  {
-    if(other->forwarded_from) {
-      forwarded_from = other->forwarded_from;
-      other->forwarded_from->ready_trigger.increment_count();
-      ready_trigger.add_action([other_forwarded_from = other->forwarded_from]{
-        other_forwarded_from->ready_trigger.decrement_count();
-      });
-    }
-  }
-
   AntiFlow(size_t initial_count) : ready_trigger(initial_count) { }
 
   CountdownTrigger<MultiActionList> ready_trigger;
