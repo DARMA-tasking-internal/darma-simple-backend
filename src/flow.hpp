@@ -170,7 +170,6 @@ struct AntiFlow {
   AntiFlow(size_t initial_count) : ready_trigger(initial_count) { }
 
   CountdownTrigger<MultiActionList> ready_trigger;
-  std::shared_ptr<AntiFlow> forwarded_from = { nullptr };
 };
 
 

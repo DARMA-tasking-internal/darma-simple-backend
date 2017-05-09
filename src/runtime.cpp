@@ -174,7 +174,7 @@ Runtime::register_use(use_pending_registration_t* use) {
   using namespace darma_runtime::abstract::frontend; // FlowRelationship
 
   // TODO make this debugging work again
-  //_SIMPLE_DBG_DO([use](auto& state) { state.add_registered_use(use); });
+  _SIMPLE_DBG_DO([use](auto& state) { state.add_registered_use(use); });
 
   //----------------------------------------------------------------------------
   // <editor-fold desc="in flow relationship"> {{{2
@@ -499,7 +499,7 @@ Runtime::register_use(use_pending_registration_t* use) {
     use->set_anti_out_flow(anti_out_flow);
   }
 
-  // </editor-fold> end in flow relationship }}}2
+  // </editor-fold> end anti_out flow relationship }}}2
   //----------------------------------------------------------------------------
 
 }
@@ -509,8 +509,7 @@ Runtime::register_use(use_pending_registration_t* use) {
 void
 Runtime::release_use(use_pending_release_t* use) {
 
-  // TODO make this debugging work again
-  //_SIMPLE_DBG_DO([use](auto& state) { state.remove_registered_use(use); });
+  _SIMPLE_DBG_DO([use](auto& state) { state.remove_registered_use(use); });
 
   if(use->establishes_alias()) {
     assert(use->get_in_flow() and use->get_out_flow());
@@ -598,6 +597,9 @@ Runtime::PendingTaskHolder::PendingTaskHolder(task_unique_ptr&& task)
     trigger_(task_->get_dependencies().size() * 2)
 {
   ++Runtime::instance->pending_tasks_;
+  _SIMPLE_DBG_DO([this](auto& state){
+    state.pending_tasks.insert(task_.get());
+  });
 }
 
 Runtime::PendingTaskHolder::~PendingTaskHolder() {
@@ -974,6 +976,11 @@ void Runtime::reduce_collection_use(
 
 void Worker::run_task(Runtime::task_unique_ptr&& task) {
 
+  _SIMPLE_DBG_DO([&](auto& state){
+    state.running_tasks.insert(task.get());
+    state.pending_tasks.erase(task.get());
+  });
+
   // setup data
   for(auto&& dep : task->get_dependencies()) {
     if(dep->immediate_permissions() != Runtime::use_t::None) {
@@ -985,6 +992,10 @@ void Worker::run_task(Runtime::task_unique_ptr&& task) {
   running_task = task.get();
 
   task->run();
+
+  _SIMPLE_DBG_DO([&](auto& state){
+    state.running_tasks.erase(task.get());
+  });
 
   // Delete the task object
   task = nullptr;

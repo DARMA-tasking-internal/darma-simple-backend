@@ -1,0 +1,2 @@
+add_executable(scratch scratch.cc)
+target_link_libraries(scratch darma_SimpleCV_backend)

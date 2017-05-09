@@ -48,6 +48,8 @@
 
 #ifdef SIMPLE_BACKEND_DEBUG
 
+#define SIMPLE_BACKEND_DEBUG_USE_FRIENDLY_POINTER_NAMES 1
+
 #include <utility>
 #include <set>
 #include <memory>
@@ -58,9 +60,51 @@
 
 namespace simple_backend {
 
+// Give pointers a "friendly name" for debugging by translating it into a base 26 string
+inline std::string
+friendly_pointer_name(void const* ptr) {
+#if SIMPLE_BACKEND_DEBUG_USE_FRIENDLY_POINTER_NAMES
+  // leave out ambiguous characters like l/1 and O
+  static const char letters[] = "abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ023456789";
+  static auto base = std::strlen(letters);
+  static constexpr auto addressable_size = 281474976710656; // = 2^48, addressable space on x86_64
+  intptr_t value = intptr_t(ptr);
+  size_t addr_size_left = addressable_size;
+  std::vector<char> rv_vect;
+  while(addr_size_left > 0) {
+    addr_size_left /= base;
+    rv_vect.push_back(letters[value % base]);
+    value /= base;
+  }
+  // it's "backwards", but who cares as long as it's consistent
+  return std::string(rv_vect.begin(), rv_vect.end());
+#else
+  std::stringstream sstr;
+  sstr << std::hex << "0x" << std::intptr_t(ptr);
+  return sstr.str();
+#endif
+}
+
+inline std::string
+permissions_to_string(darma_runtime::abstract::frontend::Use::permissions_t per) {
+  switch(per) {
+#define _DARMA__perm_case(val) case darma_runtime::abstract::frontend::Use::Permissions::val: return #val;
+    _DARMA__perm_case(None)
+    _DARMA__perm_case(Read)
+    _DARMA__perm_case(Modify)
+    _DARMA__perm_case(Write)
+    _DARMA__perm_case(Commutative)
+    _DARMA__perm_case(Relaxed)
+#undef _DARMA__perm_case
+  }
+}
+
 struct DebugState {
 
   std::set<darma_runtime::abstract::frontend::Use*> registered_uses;
+  std::set<darma_runtime::abstract::frontend::Task*> pending_tasks;
+  std::set<darma_runtime::abstract::frontend::Task*> running_tasks;
+  std::mutex state_mutex;
 
   template <typename UseT>
   void add_registered_use(UseT* use) {
@@ -80,66 +124,102 @@ struct DebugState {
     );
   }
 
+  template <typename FlowTPtr>
+  static void print_flow(
+    FlowTPtr const& flow,
+    std::string indent = "",
+    std::ostream& o = std::cerr
+  ) {
+    if(flow) {
+      o << indent << "at: " << friendly_pointer_name(&(*flow));
+      auto ready = flow->ready_trigger.get_triggered();
+      o << " (ready: " << std::boolalpha << ready;
+      if(not ready) {
+        o << ", ready trigger count: " << flow->ready_trigger.get_count();
+      }
+      o << ")";
+    }
+    else {
+      o << "is nullptr";
+    }
+  }
+
   static void print_use(
     darma_runtime::abstract::frontend::Use* use,
-    std::string indent = ""
+    std::string indent = "",
+    std::ostream& o = std::cerr
   ) {
-    std::cerr << indent << std::hex << "Use object at: 0x" << std::intptr_t(use);
+    o << indent << std::hex << "Use object at: " << friendly_pointer_name(use);
     auto* reg_use = darma_runtime::abstract::frontend::use_cast<
       darma_runtime::abstract::frontend::RegisteredUse*
     >(use);
 
-    std::cerr << std::endl << indent << "  ";
-    if(reg_use->get_in_flow()) {
-      auto& in_flow = reg_use->get_in_flow();
-      std::cerr << "in_flow at: " << std::hex << std::intptr_t(in_flow.get()) << std::endl;
-      std::cerr << indent << "    ready: " << std::boolalpha << in_flow->ready_trigger.get_triggered() << std::endl;
-      std::cerr << indent << "    ready trigger count: " << std::boolalpha << in_flow->ready_trigger.get_count() << std::endl;
-    }
-    else {
-      std::cerr << "in_flow is nullptr" << std::endl;
-    }
+    o << std::endl << indent << "  scheduling permissions: ";
+    o << permissions_to_string(use->scheduling_permissions());
 
-    std::cerr << indent << "  ";
-    if(reg_use->get_out_flow()) {
-      auto& out_flow = reg_use->get_out_flow();
-      std::cerr << "out_flow at: " << std::hex << std::intptr_t(out_flow.get()) << std::endl;
-      std::cerr << indent << "    ready: " << std::boolalpha << out_flow->ready_trigger.get_triggered() << std::endl;
-      std::cerr << indent << "    ready trigger count: " << std::boolalpha << out_flow->ready_trigger.get_count() << std::endl;
-    }
-    else {
-      std::cerr << "out_flow is nullptr" << std::endl;
-    }
+    o << std::endl << indent << "  immediate permissions: ";
+    o << permissions_to_string(use->immediate_permissions());
 
-    std::cerr << indent << "  ";
-    if(reg_use->get_anti_in_flow()) {
-      auto& anti_in_flow = reg_use->get_anti_in_flow();
-      std::cerr << "anti_in_flow at: " << std::hex << std::intptr_t(anti_in_flow.get()) << std::endl;
-      std::cerr << indent << "    ready: " << std::boolalpha << anti_in_flow->ready_trigger.get_triggered() << std::endl;
-      std::cerr << indent << "    ready trigger count: " << std::boolalpha << anti_in_flow->ready_trigger.get_count() << std::endl;
-    }
-    else {
-      std::cerr << "anti_in_flow is nullptr" << std::endl;
-    }
+    o << std::endl << indent << "  in_flow ";
+    print_flow(reg_use->get_in_flow(), "", o);
 
-    std::cerr << indent << "  ";
-    if(reg_use->get_anti_out_flow()) {
-      auto& anti_out_flow = reg_use->get_anti_out_flow();
-      std::cerr << "anti_out_flow at: " << std::hex << std::intptr_t(anti_out_flow.get()) << std::endl;
-      std::cerr << indent << "    ready: " << std::boolalpha << anti_out_flow->ready_trigger.get_triggered() << std::endl;
-      std::cerr << indent << "    ready trigger count: " << std::boolalpha << anti_out_flow->ready_trigger.get_count() << std::endl;
-    }
-    else {
-      std::cerr << "anti_out_flow is nullptr" << std::endl;
+    o << std::endl << indent << "  out_flow ";
+    print_flow(reg_use->get_out_flow(), "", o);
+
+    o << std::endl << indent << "  anti_in_flow ";
+    print_flow(reg_use->get_anti_in_flow(), "", o);
+
+    o << std::endl << indent << "  anti_out_flow ";
+    print_flow(reg_use->get_anti_out_flow(), "", o);
+  }
+
+  static void print_task(
+    darma_runtime::abstract::frontend::Task* task,
+    DebugState& state,
+    std::string indent = "",
+    std::ostream& o = std::cerr
+  ) {
+    o << indent << std::hex << "Task object at: " << friendly_pointer_name(task);
+    o << " with dependencies:" << std::endl;
+    // Technically not allowed after run is called (I think), so we should
+    // probably do something different here for running tasks
+    for(auto* dep : task->get_dependencies()) {
+      auto* dep_use = darma_runtime::abstract::frontend::use_cast<
+        darma_runtime::abstract::frontend::Use*
+      >(dep);
+      if(state.registered_uses.find(dep_use) != state.registered_uses.end()) {
+        print_use(dep_use, indent + "  ", o);
+      }
+      else {
+        o << indent << "  " << "Use object at: " << friendly_pointer_name(dep_use);
+        o << " (no longer registered)";
+      }
+      o << std::endl;
     }
   }
 
-  static void print_state(DebugState& state) {
-    std::cerr << "Registered Uses:" << std::endl;
+  static void print_state(DebugState& state, std::ostream& o = std::cerr) {
+    std::cerr << "Printing backend state in response to SIGUSR2" << std::endl;
+
+    o << "============================== Registered Uses ==============================" << std::endl;
     for(auto* use : state.registered_uses) {
-      print_use(use, "  ");
-      std::cerr << std::endl;
+      print_use(use, "  ", o);
+      o << std::endl;
     }
+    o << std::endl;
+    o << "============================== Pending Tasks =============================" << std::endl;
+    for(auto* task : state.pending_tasks) {
+      print_task(task, state, "  ", o);
+      o << std::endl;
+    }
+    o << std::endl;
+    o << "============================== Running Tasks =============================" << std::endl;
+    for(auto* task : state.running_tasks) {
+      print_task(task, state, "  ", o);
+      o << std::endl;
+    }
+    o << std::endl;
+    o << "============================= End Program State =============================" << std::endl;
   }
 
 };
@@ -165,6 +245,7 @@ struct DebugAction : DebugActionBase {
     { }
 
     void run(DebugState& state) override {
+      std::lock_guard<std::mutex> lg(state.state_mutex);
       callable_(state);
     }
 
@@ -195,6 +276,7 @@ struct DebugWorker {
     });
   }
 
+
   void run_work_loop() {
 
     while(true) {
@@ -202,7 +284,9 @@ struct DebugWorker {
 
       if(dbg_action) {
         if(dbg_action->get() == nullptr) { break; }
-        else { (*dbg_action)->run(current_state); }
+        else {
+          (*dbg_action)->run(current_state);
+        }
       }
       else {
         // Run all of the empty queue actions before handling any more debug actions
@@ -239,8 +323,12 @@ struct DebugWorker {
 
 } // end namespace simple_backend
 
-#define _SIMPLE_DBG_DO(action...) ::simple_backend::DebugWorker::instance->actions.emplace_back( \
+#define _SIMPLE_DBG_ENQUEUE(action...) ::simple_backend::DebugWorker::instance->actions.emplace_back( \
   ::simple_backend::make_debug_action_ptr(action) \
+);
+
+#define _SIMPLE_DBG_DO(action...) ::simple_backend::make_debug_action_ptr(action)->run( \
+  ::simple_backend::DebugWorker::instance->current_state \
 );
 
 

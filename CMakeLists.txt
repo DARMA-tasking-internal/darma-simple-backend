@@ -40,7 +40,7 @@ if(ENABLE_BACKEND_DEBUGGING)
 endif()
 
 add_subdirectory(src)
-add_subdirectory(examples)
+add_subdirectory(tests)
 
 export ( TARGETS darma_SimpleCV_backend
   FILE "${PROJECT_BINARY_DIR}/DarmaSimpleCVDepends.cmake"
