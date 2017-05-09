@@ -61,6 +61,8 @@ std::unique_ptr<Runtime> Runtime::instance = nullptr;
 static thread_local darma_runtime::abstract::frontend::Task* running_task = nullptr;
 static thread_local std::size_t this_worker_id = 0;
 
+static std::atomic<size_t> current_generated_key_index = { 0 };
+
 void
 Runtime::initialize_top_level_instance(int argc, char** argv) {
 
@@ -172,6 +174,17 @@ Runtime::spin_up_worker_threads()
 void
 Runtime::register_use(use_pending_registration_t* use) {
   using namespace darma_runtime::abstract::frontend; // FlowRelationship
+
+  if(darma_runtime::detail::key_traits<darma_runtime::types::key_t>::needs_backend_key(
+    use->get_handle()->get_key()
+  )) {
+    const_cast<darma_runtime::abstract::frontend::Handle*>(use->get_handle().get())
+      ->set_key(
+        darma_runtime::detail::key_traits<darma_runtime::types::key_t>::backend_maker{}(
+          current_generated_key_index++
+      )
+    );
+  }
 
   // TODO make this debugging work again
   _SIMPLE_DBG_DO([use](auto& state) { state.add_registered_use(use); });
@@ -306,7 +319,8 @@ Runtime::register_use(use_pending_registration_t* use) {
       anti_in_flow = *anti_in_rel.related_anti_flow();
       break;
     }
-    case FlowRelationship::Next : {
+    case FlowRelationship::Next :
+    case FlowRelationship::NextCollection : {
       assert(anti_in_rel.related_anti_flow());
       // The related anti-flow is unused for now, but we should still assert that it's there
       anti_in_flow = std::make_shared<AntiFlow>();
@@ -346,7 +360,7 @@ Runtime::register_use(use_pending_registration_t* use) {
   } // end switch over anti-in flow relationship
 
   use->set_anti_in_flow(anti_in_flow);
-  if(anti_in_flow and not use->will_be_dependency()) {
+  if(anti_in_flow and (not use->will_be_dependency() or use->immediate_permissions() == use_t::Read)) {
     anti_in_flow->ready_trigger.increment_count();
   }
 
@@ -533,7 +547,7 @@ Runtime::release_use(use_pending_release_t* use) {
 
   }
 
-  if(not use->was_dependency() and use->get_anti_in_flow()) {
+  if(use->get_anti_in_flow() and (not use->was_dependency() or use->immediate_permissions() == use_t::Read)) {
     use->get_anti_in_flow()->ready_trigger.decrement_count();
   }
 
@@ -696,6 +710,7 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
 
   for(auto dep : task_->get_dependencies()) {
     // Dependencies
+    // TODO clean this up to match invariants
     if(dep->get_in_flow() and dep->immediate_permissions() != use_t::None) {
       if(dep->immediate_permissions() == use_t::Commutative) {
         commutative_locks_to_obtain.emplace_back(std::ref(dep->get_in_flow()->commutative_mtx));
@@ -710,10 +725,14 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
     }
 
     // Antidependencies
-    if(dep->get_anti_in_flow()) {
+    // TODO clean this up to match invariants
+    if(dep->get_anti_in_flow()
+      and (dep->immediate_permissions() != use_t::Read and dep->immediate_permissions() != use_t::None)
+    ) {
       dep->get_anti_in_flow()->ready_trigger.add_action([this] {
-        trigger_.decrement_count();
-      });
+          trigger_.decrement_count();
+        }
+      );
     }
     else {
       trigger_.decrement_count();
