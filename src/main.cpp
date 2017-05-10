@@ -88,3 +88,13 @@ int main(int argc, char** argv) {
 #endif
 
 }
+
+namespace darma_runtime {
+
+void
+abort(std::string const& abort_str) {
+  std::cerr << "Aborting with message: " << abort_str << std::endl;
+  std::abort();
+}
+
+} // end namespace darma_runtime
