@@ -27,6 +27,9 @@ if (NOT DARMA_ROOT)
   message(FATAL_ERROR "Need DARMA_ROOT to be defined")
 endif()
 
+include(cmake/SetDarmaCompilerFlags.cmake)
+set_darma_compiler_flags()
+
 include_directories(
   ${DARMA_ROOT}/src/include
   ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -42,8 +45,10 @@ endif()
 add_subdirectory(src)
 add_subdirectory(tests)
 
+find_package( Threads REQUIRED )
+
 export ( TARGETS darma_simple_backend
-  FILE "${PROJECT_BINARY_DIR}/DarmaSimpleDepends.cmake"
+  FILE "${PROJECT_BINARY_DIR}/DarmaSimpleBackendDepends.cmake"
 )
 export ( PACKAGE darma_simple_backend )
 
