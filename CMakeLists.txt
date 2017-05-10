@@ -43,7 +43,11 @@ if(ENABLE_BACKEND_DEBUGGING)
 endif()
 
 add_subdirectory(src)
-add_subdirectory(tests)
+if(DARMA_SIMPLE_BACKEND_DISABLE_TESTS)
+  message(STATUS "Not building simple_backend-specific tests")
+else()
+  add_subdirectory(tests)
+endif()
 
 find_package( Threads REQUIRED )
 

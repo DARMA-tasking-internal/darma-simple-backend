@@ -10,5 +10,5 @@ add_library(darma_simple_backend SHARED ${sources} ${headers})
 set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD 14)
 set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD_REQUIRED ON)
 
-install(TARGETS darma_simple_backend EXPORT DarmasimpleBackendDepends DESTINATION lib)
+install(TARGETS darma_simple_backend EXPORT DarmaSimpleBackendDepends DESTINATION lib)
 install(FILES ${headers} DESTINATION include)
