@@ -175,9 +175,7 @@ void
 Runtime::register_use(use_pending_registration_t* use) {
   using namespace darma_runtime::abstract::frontend; // FlowRelationship
 
-  if(darma_runtime::detail::key_traits<darma_runtime::types::key_t>::needs_backend_key(
-    use->get_handle()->get_key()
-  )) {
+  if(not use->get_handle()->has_user_defined_key()) {
     const_cast<darma_runtime::abstract::frontend::Handle*>(use->get_handle().get())
       ->set_key(
         darma_runtime::detail::key_traits<darma_runtime::types::key_t>::backend_maker{}(
