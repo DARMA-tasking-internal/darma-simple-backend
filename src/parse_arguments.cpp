@@ -63,22 +63,35 @@ std::vector<std::string> SimpleBackendOptions::parse_args(
   auto rv = std::vector<std::string>();
   rv.emplace_back(argv[0]);
 
+  bool app_argv_encountered = false;
+
   while(spot < argc) {
     std::string arg(argv[spot]);
 
     // TODO more sophisticated mechanism here
-
-    if(arg == "--backend-n-workers") {
-      assert(spot + 1 < argc);
-      n_threads = std::atoi(argv[++spot]);
-    }
-    else if(arg == "--backend-lookahead") {
-      assert(spot + 1 < argc);
-      lookahead = std::atoi(argv[++spot]);
-    }
-    // TODO more options
+    if(app_argv_encountered) { rv.push_back(arg); }
     else {
-      rv.push_back(arg);
+      if(
+           arg == "--backend-n-workers"
+        || arg == "--ranks"
+      ) {
+        assert(spot + 1 < argc);
+        n_threads = std::atoi(argv[++spot]);
+      }
+      else if(arg == "--backend-lookahead") {
+        assert(spot + 1 < argc);
+        lookahead = std::atoi(argv[++spot]);
+      }
+      else if(
+           arg == "--app-argv"
+        || arg == "--"
+      ) {
+        app_argv_encountered = true;
+      }
+      // TODO more options
+      else {
+        rv.push_back(arg);
+      }
     }
 
     ++spot;
