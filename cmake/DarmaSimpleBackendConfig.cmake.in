@@ -1,4 +1,4 @@
-# - Config file for the DarmaSimpleCVBackend package
+# - Config file for the DarmaSimpleBackend package
 # It defines the following variables
 #  DARMA_BACKEND_INCLUDE_DIRS - include directories
 #  DARMA_BACKEND_LIBRARY_DIRS - library directories
@@ -10,7 +10,7 @@
 GET_FILENAME_COMPONENT (DARMA_BACKEND_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 IF (EXISTS "${DARMA_BACKEND_CMAKE_DIR}/CMakeCache.txt")
    # In build tree, which is undesirable
-   MESSAGE(FATAL_ERROR "FIND_PACKAGE found build tree instead of install tree.  Use -DDarmaSimpleCVBackend_DIR= to point cmake to the install tree.")
+   MESSAGE(FATAL_ERROR "FIND_PACKAGE found build tree instead of install tree.  Use -DDarmaSimpleBackend_DIR= to point cmake to the install tree.")
 ELSE ()
    SET (DARMA_BACKEND_INCLUDE_DIRS ${DARMA_BACKEND_CMAKE_DIR}/../include @DARMA_FRONTEND_INSTALL_INCLUDE_DIR@)
    SET (DARMA_BACKEND_LIBRARY_DIRS ${DARMA_BACKEND_CMAKE_DIR}/../lib)
@@ -21,8 +21,8 @@ SET (DARMA_BACKEND_CXX_COMPILER "@CMAKE_CXX_COMPILER@")
 SET (DARMA_BACKEND_CXX_FLAGS "@CMAKE_CXX_FLAGS@")
  
 # Our library dependencies (contains definitions for IMPORTED targets)
-INCLUDE ("${DARMA_BACKEND_CMAKE_DIR}/DarmaSimpleCVBackendDepends.cmake")
+INCLUDE ("${DARMA_BACKEND_CMAKE_DIR}/DarmaSimpleBackendDepends.cmake")
  
-# These are IMPORTED targets created by DarmaSimpleCVBackendDepends.cmake
-SET (DARMA_BACKEND_LIBRARIES darma_SimpleCV_backend @CMAKE_SimpleCV_LIBS_INIT@)
+# These are IMPORTED targets created by DarmaSimpleBackendDepends.cmake
+SET (DARMA_BACKEND_LIBRARIES darma_simple_backend @CMAKE_SIMPLE_LIBS_INIT@)
 
