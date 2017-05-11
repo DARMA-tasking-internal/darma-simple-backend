@@ -61,7 +61,6 @@ std::unique_ptr<Runtime> Runtime::instance = nullptr;
 static thread_local darma_runtime::abstract::frontend::Task* running_task = nullptr;
 static thread_local std::size_t this_worker_id = 0;
 
-static std::atomic<size_t> current_generated_key_index = { 0 };
 
 void
 Runtime::initialize_top_level_instance(int argc, char** argv) {
@@ -143,6 +142,21 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
     // PendingTaskHolder deletes itself, so this isn't a memory leak
     auto* holder = new PendingTaskHolder(tc->create_task_for_index(i));
 
+    if(
+      not darma_runtime::detail::key_traits<darma_runtime::types::key_t>::key_equal{}(
+        tc->get_name(),
+        darma_runtime::make_key()
+      )
+    ) {
+      // TODO do this faster
+      holder->task_->set_name(
+        darma_runtime::make_key(
+          std::string("backend index ") + std::to_string(i) + std::string(" of "),
+          tc->get_name()
+        )
+      );
+    }
+
     holder->enqueue_or_run((this_worker_id + i) % nthreads_,
       // Prevent immediate execution so that all tc indices get spawned
       // and have a chance to run concurrently
@@ -169,395 +183,6 @@ Runtime::spin_up_worker_threads()
   workers[0].run_work_loop(nthreads_);
 }
 
-//==============================================================================
-
-void
-Runtime::register_use(use_pending_registration_t* use) {
-  using namespace darma_runtime::abstract::frontend; // FlowRelationship
-
-  if(not use->get_handle()->has_user_defined_key()) {
-    const_cast<darma_runtime::abstract::frontend::Handle*>(use->get_handle().get())
-      ->set_key(
-        darma_runtime::detail::key_traits<darma_runtime::types::key_t>::backend_maker{}(
-          current_generated_key_index++
-      )
-    );
-  }
-
-  // TODO make this debugging work again
-  _SIMPLE_DBG_DO([use](auto& state) { state.add_registered_use(use); });
-
-  //----------------------------------------------------------------------------
-  // <editor-fold desc="in flow relationship"> {{{2
-
-  std::shared_ptr<Flow> in_flow = nullptr;
-
-  auto const& in_rel = use->get_in_flow_relationship();
-
-  switch (in_rel.description()) {
-    case FlowRelationship::Insignificant :
-    case FlowRelationship::InsignificantCollection : {
-      in_flow = nullptr;
-      break;
-    }
-    case FlowRelationship::Same :
-    case FlowRelationship::SameCollection : {
-      assert(in_rel.related_flow());
-      in_flow = *in_rel.related_flow();
-      break;
-    }
-    case FlowRelationship::Next :
-    case FlowRelationship::NextCollection : {
-      assert(in_rel.related_flow());
-      in_flow = std::make_shared<Flow>(
-        (*in_rel.related_flow())->control_block
-      );
-      break;
-    }
-    case FlowRelationship::Initial : {
-      assert(in_rel.related_flow() == nullptr);
-      in_flow = std::make_shared<Flow>(
-        std::make_shared<ControlBlock>(use->get_handle()),
-        1 // start with a count so we can make it ready immediately
-      );
-      in_flow->ready_trigger.decrement_count();
-      break;
-    }
-    case FlowRelationship::InitialCollection : {
-      assert(in_rel.related_flow() == nullptr);
-      in_flow = std::make_shared<Flow>(
-        std::make_shared<CollectionControlBlock>(
-          use->get_handle(),
-          darma_runtime::abstract::frontend::use_cast<
-            darma_runtime::abstract::frontend::CollectionManagingUse*
-          >(use)->get_managed_collection()->size()
-        ),
-        1 // start with a count so we can make it ready immediately
-      );
-      in_flow->ready_trigger.decrement_count();
-      break;
-    }
-    case FlowRelationship::IndexedLocal : {
-      assert(in_rel.related_flow());
-      auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(
-        (*in_rel.related_flow())->control_block
-      );
-      in_flow = std::make_shared<Flow>(
-        std::make_shared<ControlBlock>(
-          coll_cntrl->data_for_index(in_rel.index()),
-          coll_cntrl,
-          in_rel.index()
-        ),
-        1 // start with a count so that the collection flow can make it ready
-      );
-      (*in_rel.related_flow())->ready_trigger.add_action([in_flow] {
-        in_flow->ready_trigger.decrement_count();
-      });
-      break;
-    }
-    case FlowRelationship::IndexedFetching : {
-      assert(in_rel.related_flow());
-      auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(
-        (*in_rel.related_flow())->control_block
-      );
-      in_flow = std::make_shared<Flow>(
-        std::make_shared<ControlBlock>(use->get_handle(), nullptr)
-      );
-      in_flow->ready_trigger.increment_count();
-      coll_cntrl->current_published_entries.evaluate_at(
-        std::make_pair(
-          *in_rel.version_key(), in_rel.index()
-        ),
-        [in_flow](PublicationTableEntry& entry) {
-          if(not entry.entry) {
-            entry.entry = std::make_shared<PublicationTableEntry::Impl>();
-          }
-          entry.entry->fetching_trigger.add_action([entry_entry=entry.entry, in_flow]{
-            in_flow->control_block->data =
-              (*entry_entry->source_flow)->control_block->data;
-            in_flow->ready_trigger.decrement_count();
-          });
-        }
-      );
-
-      break;
-    }
-    case FlowRelationship::Forwarding : {
-      assert(in_rel.related_flow());
-      // This should just work the same way as Same
-      in_flow = *in_rel.related_flow();
-      break;
-    }
-    default : {
-      assert(false); // not implemented description
-    }
-  } // end switch over in flow relationship
-
-  use->set_in_flow(in_flow);
-
-  // </editor-fold> end in flow relationship }}}2
-  //----------------------------------------------------------------------------
-
-  //----------------------------------------------------------------------------
-  // <editor-fold desc="anti-in flow relationship"> {{{2
-
-  std::shared_ptr<AntiFlow> anti_in_flow = nullptr;
-
-  auto const& anti_in_rel = use->get_anti_in_flow_relationship();
-
-  switch (anti_in_rel.description()) {
-    case FlowRelationship::Insignificant :
-    case FlowRelationship::InsignificantCollection : {
-      anti_in_flow = nullptr;
-      break;
-    }
-    case FlowRelationship::Same :
-    case FlowRelationship::SameCollection : {
-      assert(anti_in_rel.related_anti_flow());
-      anti_in_flow = *anti_in_rel.related_anti_flow();
-      break;
-    }
-    case FlowRelationship::Next :
-    case FlowRelationship::NextCollection : {
-      assert(anti_in_rel.related_anti_flow());
-      // The related anti-flow is unused for now, but we should still assert that it's there
-      anti_in_flow = std::make_shared<AntiFlow>();
-      break;
-    }
-    case FlowRelationship::Forwarding : {
-      assert(anti_in_rel.related_anti_flow());
-      // The related anti-flow is unused for now, but we should still assert that it's there
-      assert(*anti_in_rel.related_anti_flow());
-      anti_in_flow = std::make_shared<AntiFlow>(
-        1 // start with a count so that the flow we forwarded it from can make it ready
-      );
-      // The forwarded is anti-flow actually ready as soon as it's created, even
-      // though the related anti-flow will not be ready (since it needs to be held
-      // by the continuation for the purposes of the outer scope anti-dependency).
-      // We should decrement the count here to make the new anti-flow ready now:
-      anti_in_flow->ready_trigger.decrement_count();
-      break;
-    }
-    case FlowRelationship::IndexedLocal : {
-      assert(anti_in_rel.related_anti_flow());
-      // Only create an indexed local version if the collection flow isn't insignificant
-      if(*anti_in_rel.related_anti_flow()) {
-        anti_in_flow = std::make_shared<AntiFlow>(
-          1 // start with a count so that the collection flow can make it ready
-        );
-        (*anti_in_rel.related_anti_flow())->ready_trigger.add_action([anti_in_flow] {
-            anti_in_flow->ready_trigger.decrement_count();
-        });
-      }
-      break;
-    }
-    default : {
-      // None of the other cases should be used for now
-      assert(false); // not implemented description
-    }
-  } // end switch over anti-in flow relationship
-
-  use->set_anti_in_flow(anti_in_flow);
-  if(anti_in_flow and (not use->will_be_dependency() or use->immediate_permissions() == use_t::Read)) {
-    anti_in_flow->ready_trigger.increment_count();
-  }
-
-  // </editor-fold> end in flow relationship }}}2
-  //----------------------------------------------------------------------------
-
-  //----------------------------------------------------------------------------
-  // <editor-fold desc="out flow relationship"> {{{2
-
-  auto const& out_rel = use->get_out_flow_relationship();
-  auto* out_related = out_rel.related_flow();
-  if(out_rel.use_corresponding_in_flow_as_related()) {
-    assert(in_flow);
-    out_related = &in_flow;
-  }
-
-  std::shared_ptr<Flow> out_flow = nullptr;
-
-  switch (out_rel.description()) {
-    case FlowRelationship::Insignificant :
-    case FlowRelationship::InsignificantCollection : {
-      use->set_out_flow(nullptr);
-      break;
-    }
-    case FlowRelationship::Same :
-    case FlowRelationship::SameCollection : {
-      assert(out_related);
-      out_flow = *out_related;
-      break;
-    }
-    case FlowRelationship::Next :
-    case FlowRelationship::NextCollection : {
-      assert(out_related);
-      out_flow = std::make_shared<Flow>((*out_related)->control_block);
-      break;
-    }
-    case FlowRelationship::Null :
-    case FlowRelationship::NullCollection : {
-      assert(in_flow);
-      out_flow = std::make_shared<Flow>(in_flow->control_block);
-      break;
-    }
-    case FlowRelationship::IndexedLocal : {
-      assert(out_related);
-      // Indexed local out doesn't need a control block
-      auto out_flow_related = *out_related;
-      out_flow_related->ready_trigger.increment_count();
-      out_flow = std::make_shared<Flow>(std::make_shared<ControlBlock>(nullptr));
-      out_flow->ready_trigger.add_action([out_flow_related]{
-        out_flow_related->ready_trigger.decrement_count();
-      });
-      break;
-    }
-    default : {
-      // None of the others should be used for now
-      assert(false); // not implemented description
-    }
-  } // end switch over in flow relationship
-
-  if(out_flow) {
-    // It's being used as an out, so make it not ready until this is released
-    out_flow->ready_trigger.increment_count();
-    use->set_out_flow(out_flow);
-  }
-
-  // </editor-fold> end out flow relationship }}}2
-  //----------------------------------------------------------------------------
-
-  //----------------------------------------------------------------------------
-  // <editor-fold desc="anti-out flow relationship"> {{{2
-
-  std::shared_ptr<AntiFlow> anti_out_flow = nullptr;
-
-  auto const& anti_out_rel = use->get_anti_out_flow_relationship();
-  auto anti_out_related_flow = anti_out_rel.related_flow();
-  auto anti_out_related_anti_flow = anti_out_rel.related_anti_flow();
-  if(anti_out_rel.use_corresponding_in_flow_as_related()) {
-    anti_out_related_flow = &in_flow;
-  }
-  if(anti_out_rel.use_corresponding_in_flow_as_anti_related()) {
-    anti_out_related_anti_flow = &anti_in_flow;
-  }
-
-  switch (anti_out_rel.description()) {
-    case FlowRelationship::Insignificant :
-    case FlowRelationship::InsignificantCollection : {
-      anti_out_flow = nullptr;
-      break;
-    }
-    case FlowRelationship::Initial :
-    case FlowRelationship::InitialCollection : {
-      anti_out_flow = std::make_shared<AntiFlow>();
-      break;
-    }
-    case FlowRelationship::Same :
-    case FlowRelationship::SameCollection : {
-      assert(anti_out_rel.related_anti_flow());
-      anti_out_flow = *anti_out_related_anti_flow;
-      break;
-    }
-    case FlowRelationship::Next :
-    case FlowRelationship::NextCollection : {
-      assert(anti_out_related_anti_flow);
-      assert(*anti_out_related_anti_flow);
-      // The related anti-flow is unused for now, but we should still assert that it's there
-      anti_out_flow = std::make_shared<AntiFlow>();
-      break;
-    }
-    case FlowRelationship::IndexedLocal : {
-      assert(anti_out_related_anti_flow);
-      assert(*anti_out_related_anti_flow);
-      auto anti_out_flow_related = *anti_out_related_anti_flow;
-      anti_out_flow_related->ready_trigger.increment_count();
-      anti_out_flow = std::make_shared<AntiFlow>();
-      anti_out_flow->ready_trigger.add_action([anti_out_flow_related] {
-        anti_out_flow_related->ready_trigger.decrement_count();
-      });
-      break;
-    }
-    case FlowRelationship::IndexedFetching : {
-      // We need to get the published entries from the in flow
-      assert(in_rel.related_flow());
-      auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(
-        (*in_rel.related_flow())->control_block
-      );
-      anti_out_flow = std::make_shared<AntiFlow>();
-
-      coll_cntrl->current_published_entries.evaluate_at(
-        std::make_pair(
-          *anti_out_rel.version_key(), anti_out_rel.index()
-        ),
-        [anti_out_flow](PublicationTableEntry& entry) {
-          assert(entry.entry);
-          anti_out_flow->ready_trigger.add_action([entry_entry=entry.entry]{
-            entry_entry->release_trigger.decrement_count();
-          });
-        }
-      );
-      break;
-    }
-    default : {
-      // None of the others should be used for now
-      assert(false); // not implemented description
-    }
-  } // end switch over anti-in flow relationship
-
-  if(anti_out_flow) {
-    // It's being used as an out, so make it not ready until this is released
-    anti_out_flow->ready_trigger.increment_count();
-    use->set_anti_out_flow(anti_out_flow);
-  }
-
-  // </editor-fold> end anti_out flow relationship }}}2
-  //----------------------------------------------------------------------------
-
-}
-
-//==============================================================================
-
-void
-Runtime::release_use(use_pending_release_t* use) {
-
-  _SIMPLE_DBG_DO([use](auto& state) { state.remove_registered_use(use); });
-
-  if(use->establishes_alias()) {
-    assert(use->get_in_flow() and use->get_out_flow());
-    auto& out_flow = use->get_out_flow();
-
-    // Increment the count to indicate responsibility for all of the
-    // producers of the in flow
-    out_flow->ready_trigger.increment_count();
-    // Then decrement that count when the in flow becomes ready
-    use->get_in_flow()->ready_trigger.add_action([out_flow]{
-      out_flow->ready_trigger.decrement_count();
-    });
-
-    if(use->get_anti_in_flow()) {
-      auto anti_in_flow = use->get_anti_in_flow();
-      anti_in_flow->ready_trigger.increment_count();
-      use->get_anti_out_flow()->ready_trigger.add_action([anti_in_flow]{
-        anti_in_flow->ready_trigger.decrement_count();
-      });
-    }
-
-  }
-
-  if(use->get_anti_in_flow() and (not use->was_dependency() or use->immediate_permissions() == use_t::Read)) {
-    use->get_anti_in_flow()->ready_trigger.decrement_count();
-  }
-
-  if(use->get_out_flow()) use->get_out_flow()->ready_trigger.decrement_count();
-
-  if(use->get_anti_out_flow()) use->get_anti_out_flow()->ready_trigger.decrement_count();
-
-  if(use->immediate_permissions() == use_t::Commutative) {
-    use->get_in_flow()->comm_in_flow_release_trigger.activate();
-  }
-
-}
 
 //==============================================================================
 
@@ -690,7 +315,6 @@ struct ObtainExclusiveAccessAction {
 
 };
 
-
 void Runtime::PendingTaskHolder::enqueue_or_run(
   size_t worker_id,
   bool allow_run_on_stack
@@ -706,10 +330,13 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
   std::vector<std::reference_wrapper<std::mutex>> commutative_locks_to_obtain;
   std::vector<std::shared_ptr<Flow>> commutative_in_flows;
 
+  // Increment the trigger so that the corresponding decrement after finding
+  // no dependencies will enqueue the task
+  trigger_.increment_count();
+
   for(auto dep : task_->get_dependencies()) {
     // Dependencies
-    // TODO clean this up to match invariants
-    if(dep->get_in_flow() and dep->immediate_permissions() != use_t::None) {
+    if(dep->is_dependency()) {
       if(dep->immediate_permissions() == use_t::Commutative) {
         commutative_locks_to_obtain.emplace_back(std::ref(dep->get_in_flow()->commutative_mtx));
         commutative_in_flows.emplace_back(dep->get_in_flow());
@@ -723,10 +350,8 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
     }
 
     // Antidependencies
-    // TODO clean this up to match invariants
-    if(dep->get_anti_in_flow()
-      and (dep->immediate_permissions() != use_t::Read and dep->immediate_permissions() != use_t::None)
-    ) {
+    if(dep->is_anti_dependency()) {
+      assert(dep->get_anti_in_flow());
       dep->get_anti_in_flow()->ready_trigger.add_action([this] {
           trigger_.decrement_count();
         }
@@ -736,6 +361,10 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
       trigger_.decrement_count();
     }
   }
+
+  // decrement indicating that we've looked at all of the dependencies; corresponds
+  // to the increment before the for loop.
+  trigger_.decrement_count();
 
   if(commutative_locks_to_obtain.size() > 0) {
     // When everything else is ready, we want to try and obtain exclusive
@@ -778,216 +407,10 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
     }
   }
 
-}
-
-//==============================================================================
-
-void Runtime::allreduce_use(
-  std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_in_out,
-  darma_runtime::abstract::frontend::CollectiveDetails const* details,
-  darma_runtime::types::key_t const& tag
-) {
-
-  auto token = details->get_task_collection_token();
-  auto size = token->size;
-  auto* reduce_op = details->reduce_operation();
-  assert(size == details->n_contributions());
-
-  token->collectives.evaluate_or_evaluate_first(tag,
-    //==========================================================================
-    // Evaluated if collective already exists
-    [size, reduce_op, this, token](
-      std::shared_ptr<TaskCollectionToken::CollectiveInvocation> const& invocation,
-      auto&& use_in_out
-    ) mutable {
-
-      invocation->uses.push_back(std::move(use_in_out));
-
-      invocation->uses.back()->get_in_flow()->ready_trigger.add_action([
-        // I doubt this actually has to be a weak_ptr, but for easier debugging in case it does:
-        invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation),
-        handle = invocation->uses.back()->get_handle(),
-        control_block = invocation->uses.back()->get_in_flow()->control_block,
-        reduce_op
-      ]{
-        auto invocation = invocation_ptr.lock();
-        assert(invocation);
-        auto* in_data = control_block->data;
-        auto nelem = handle->get_array_concept_manager()->n_elements(in_data);
-        auto first_use_data = invocation->uses[0]->get_in_flow()->control_block->data;
-        reduce_op->reduce_unpacked_into_unpacked(
-          in_data, first_use_data, 0, nelem
-        );
-        invocation->ready_trigger.decrement_count();
-      });
-
-      if(invocation->uses.back()->get_anti_in_flow()) {
-        invocation->uses.back()->get_anti_in_flow()->ready_trigger.add_action([
-          invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation)
-        ]{
-          auto invocation = invocation_ptr.lock();
-          assert(invocation);
-          invocation->ready_trigger.decrement_count();
-        });
-      }
-      else {
-        invocation->ready_trigger.decrement_count();
-      }
-
-    },
-    //==========================================================================
-    // Evaluated if we got here first
-    [size, reduce_op, this, token, tag](
-      std::shared_ptr<TaskCollectionToken::CollectiveInvocation> const& invocation,
-      auto&& use_in_out
-    ) mutable {
-      assert(invocation);
-      invocation->result_control_block = use_in_out->get_in_flow()->control_block;
-
-      invocation->ready_trigger.add_action([
-        invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation),
-        this, token, tag
-      ]{
-        auto invocation = invocation_ptr.lock();
-        assert(invocation);
-
-        // TODO use deep copy instead here
-        auto* first_use_data = invocation->uses[0]->get_in_flow()->control_block->data;
-        auto ser_man = invocation->uses[0]->get_handle()->get_serialization_manager();
-        auto ser_pol = darma_runtime::abstract::backend::SerializationPolicy();
-
-        auto packed_size = ser_man->get_packed_data_size(first_use_data, &ser_pol);
-        auto* packed_data = new char[packed_size];
-
-        ser_man->pack_data(first_use_data, packed_data, &ser_pol);
-
-        for(int iuse = 1; iuse < invocation->uses.size(); ++iuse) {
-          auto& u = invocation->uses[iuse];
-          auto* udata = u->get_in_flow()->control_block->data;
-          ser_man->destroy(udata);
-          ser_man->unpack_data(udata, packed_data, &ser_pol);
-        }
-
-        delete[] packed_data;
-
-        for(auto&& use : invocation->uses) {
-          release_use(
-            darma_runtime::abstract::frontend::use_cast<
-              darma_runtime::abstract::frontend::UsePendingRelease*
-            >(use.get())
-          );
-        }
-
-        // TODO ! This would potentially deadlock if there's only one element, since
-        // we're holding a lock to the map from the outer evaluate_or_evaluate_first
-        assert(token->size != 1);
-        token->collectives.erase(tag);
-
-      });
-
-      use_in_out->get_in_flow()->ready_trigger.add_action([
-        invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation)
-      ]{
-        auto invocation = invocation_ptr.lock();
-        assert(invocation);
-        invocation->ready_trigger.decrement_count();
-      });
-
-      if(use_in_out->get_anti_in_flow()) {
-        use_in_out->get_anti_in_flow()->ready_trigger.add_action([
-          invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation)
-        ]{
-          auto invocation = invocation_ptr.lock();
-          assert(invocation);
-          invocation->ready_trigger.decrement_count();
-        });
-      }
-      else {
-        invocation->ready_trigger.decrement_count();
-      }
-
-      invocation->uses.push_back(std::move(use_in_out));
-
-    },
-    //==========================================================================
-    std::forward_as_tuple(std::make_shared<TaskCollectionToken::CollectiveInvocation>(2*size)),
-    std::move(use_in_out)
-  );
-}
-
-//==============================================================================
-
-void Runtime::reduce_collection_use(
-  std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_collection_in,
-  std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_out,
-  darma_runtime::abstract::frontend::CollectiveDetails const* details,
-  darma_runtime::types::key_t const&
-) {
-  assert(use_collection_in->manages_collection());
-  assert(not use_out->manages_collection());
-
-  auto in_ctrl_block = std::static_pointer_cast<CollectionControlBlock>(
-    use_collection_in->get_in_flow()->control_block
-  );
-
-  auto* in_coll = darma_runtime::abstract::frontend::use_cast<
-    darma::abstract::frontend::CollectionManagingUse*
-  >(use_collection_in.get())->get_managed_collection();
-
-  // TODO more asynchrony here (i.e., start when indices of prev collection are ready rather than whole)
-
-  // This is a read, so it should only consume flows and produce anti-flows
-  // of the
-  darma_runtime::types::flow_t in_coll_in_flow(use_collection_in->get_in_flow());
-  in_coll_in_flow->ready_trigger.add_action([
-    this,
-    use_collection_in = std::move(use_collection_in),
-    use_out = std::move(use_out),
-    reduce_op = details->reduce_operation(), in_coll, in_ctrl_block
-  ]() mutable {
-    darma_runtime::types::anti_flow_t out_anti_in_flow(use_out->get_anti_in_flow());
-    out_anti_in_flow->ready_trigger.add_action([
-      this,
-      use_collection_in = std::move(use_collection_in),
-      use_out = std::move(use_out), reduce_op, in_coll, in_ctrl_block
-    ]{
-      use_out->get_handle()->get_serialization_manager()->destroy(
-        use_out->get_in_flow()->control_block->data
-      );
-      use_out->get_handle()->get_serialization_manager()->default_construct(
-        use_out->get_in_flow()->control_block->data
-      );
-      auto* out_data = use_out->get_in_flow()->control_block->data;
-
-      auto array_concept_manager = use_collection_in->get_handle()->get_array_concept_manager();
-
-      for(size_t idx = 0; idx < in_coll->size(); ++idx) {
-        auto in_data = in_ctrl_block->data_for_index(idx);
-        auto nelem = array_concept_manager->n_elements(
-          in_data
-        );
-        reduce_op->reduce_unpacked_into_unpacked(
-          in_data, out_data,
-          0, nelem
-        );
-      }
-
-      release_use(
-        darma_runtime::abstract::frontend::use_cast<
-          darma_runtime::abstract::frontend::UsePendingRelease*
-        >(use_collection_in.get())
-      );
-      release_use(
-        darma_runtime::abstract::frontend::use_cast<
-          darma_runtime::abstract::frontend::UsePendingRelease*
-        >(use_out.get())
-      );
-
-    });
-  });
+  // CAREFUL!  Don't put anything down here because this object may not exist at this point
+  // TODO also make sure all stack variables that might reference this are gone before the delete this executes
 
 }
-
 
 //==============================================================================
 

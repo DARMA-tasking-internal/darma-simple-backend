@@ -149,15 +149,14 @@ struct DebugState {
     std::string indent = "",
     std::ostream& o = std::cerr
   ) {
-    o << indent << std::hex << "Use object at: " << friendly_pointer_name(use);
+    o << indent << std::hex << "Use object for handle with key " << use->get_handle()->get_key();
+    o << "(address: " << friendly_pointer_name(use) << ")";
     auto* reg_use = darma_runtime::abstract::frontend::use_cast<
       darma_runtime::abstract::frontend::RegisteredUse*
     >(use);
 
-    o << std::endl << indent << "  scheduling permissions: ";
-    o << permissions_to_string(use->scheduling_permissions());
-
-    o << std::endl << indent << "  immediate permissions: ";
+    o << std::endl << indent << "  scheduling / immediate permissions: ";
+    o << permissions_to_string(use->scheduling_permissions()) << " / ";
     o << permissions_to_string(use->immediate_permissions());
 
     o << std::endl << indent << "  in_flow ";
@@ -179,7 +178,17 @@ struct DebugState {
     std::string indent = "",
     std::ostream& o = std::cerr
   ) {
-    o << indent << std::hex << "Task object at: " << friendly_pointer_name(task);
+    o << indent << std::hex << "Task object";
+    if(
+      not darma_runtime::detail::key_traits<darma_runtime::types::key_t>::key_equal{}(
+        task->get_name(),
+        darma_runtime::make_key()
+      )
+    ) {
+      o << " named " << task->get_name();
+    }
+    else { o << " (unnamed), "; }
+    o << "(address: " << friendly_pointer_name(task) << ")";
     o << " with dependencies:" << std::endl;
     // Technically not allowed after run is called (I think), so we should
     // probably do something different here for running tasks

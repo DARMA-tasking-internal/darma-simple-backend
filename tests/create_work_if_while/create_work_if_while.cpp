@@ -19,12 +19,13 @@ void darma_main_task(std::vector<std::string> args) {
 
   create_work_if([=]{
     return *i == 10;
-  }).then_(reads(i), [=]{
+  }).then_([=]{
     std::cout << "Hello World!  i = " << *i << std::endl;
+    *i = 42;
   });
 
   create_work_if([=]{
-    return *i == 0;
+    return *i == 10;
   }).then_(reads(i), [=]{
     *i = 0;
     assert(false); // shouldn't get here
