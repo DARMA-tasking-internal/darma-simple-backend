@@ -49,7 +49,7 @@
 
 #include <darma/interface/backend/runtime.h>
 
-#include "concurrent_list.hpp"
+#include "data_structures/concurrent_list.hpp"
 #include "trigger.hpp"
 #include "worker.hpp"
 #include "flow.hpp"
@@ -125,9 +125,7 @@ class Runtime
       std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& use_out,
       darma_runtime::abstract::frontend::CollectiveDetails const* details,
       darma_runtime::types::key_t const& tag
-    ) override {
-      assert(false); // not implemented
-    }
+    ) override;
 
     void
     reduce_collection_use(

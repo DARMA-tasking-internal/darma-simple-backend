@@ -48,7 +48,7 @@
 #include <atomic>
 #include <cassert>
 
-#include "concurrent_list.hpp"
+#include "data_structures/concurrent_list.hpp"
 
 namespace simple_backend {
 
@@ -138,6 +138,38 @@ struct SingleAction {
 
 };
 
+template <typename Action>
+struct SingleSpecificAction {
+
+  std::atomic<Action*> action_ = { nullptr };
+
+  template <typename ActionUniquePtr>
+  void add_action(ActionUniquePtr&& action_ptr) {
+    action_.store(action_ptr.release());
+  }
+
+  template <typename ActionUniquePtr>
+  void add_priority_action(ActionUniquePtr&& action_ptr) {
+    add_action(std::forward<ActionUniquePtr>(action_ptr));
+  }
+
+  void do_actions() {
+    Action* action_once = action_.exchange(nullptr);
+    if(action_once) {
+      action_once->run();
+      delete action_once;
+    }
+  }
+
+  ~SingleSpecificAction() {
+    Action* action_to_delete = action_.exchange(nullptr);
+    if(action_to_delete) {
+      delete action_to_delete;
+    }
+  }
+
+};
+
 
 template <typename ActionList>
 class CountdownTrigger {
@@ -216,6 +248,30 @@ class CountdownTrigger {
     // For approximate debugging purposes only
     bool get_triggered() const { return triggered_.load(); }
 };
+
+
+#if 0
+// TODO finish implementing this
+namespace detail {
+
+template <typename Action>
+struct WhenAllTriggersReadyInvoker {
+  CountdownTrigger<SingleSpecificAction<Action>> action_trigger_ = { 0 };
+
+  template <typename... Triggers>
+  WhenAllTriggersReadyInvoker(Triggers&&... triggers)
+    : action_trigger_(sizeof...(Triggers))
+  {
+    std::forward_as_tuple( // only for "faking" a fold operation
+      triggers.add_action([this] { action_trigger_.decrement_count(); })...
+    );
+  }
+
+};
+
+} // end namespace detail
+#endif
+
 
 template <typename ActionList>
 class ResettableBooleanTrigger {

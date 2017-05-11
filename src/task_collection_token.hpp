@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      flow.hpp
+//                      task_collection_token.hpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -36,45 +36,50 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact David S. Hollman (dshollm@sandia.gov)
+// Questions? Contact the DARMA developers (darma-admins@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
 */
 
-#ifndef DARMASIMPLECVBACKEND_FLOW_HPP
-#define DARMASIMPLECVBACKEND_FLOW_HPP
+#ifndef DARMASIMPLEBACKEND_TASK_COLLECTION_TOKEN_HPP
+#define DARMASIMPLEBACKEND_TASK_COLLECTION_TOKEN_HPP
+
+#include <memory>
+
+#include <darma/interface/frontend/use.h>
 
 #include "trigger.hpp"
-#include "publish.hpp"
 #include "control_block.hpp"
 
 namespace simple_backend {
 
-struct Flow {
-  Flow(std::shared_ptr<ControlBlock> cblk) : control_block(cblk), ready_trigger(0) { }
+struct TaskCollectionToken {
 
-  Flow( std::shared_ptr<ControlBlock> cblk, size_t initial_count)
-    : control_block(cblk), ready_trigger(initial_count) { }
+  struct CollectiveInvocation {
+    CollectiveInvocation(size_t n_contribs)
+      : input_uses(),
+        ready_trigger(n_contribs) // in and anti-in for each contribution
+    {
+      input_uses.reserve(n_contribs);
+    }
+    CountdownTrigger<SingleAction> ready_trigger;
+    std::atomic<void*> output_data_ptr = { nullptr }; // only used for the two use case
+    std::vector<std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>> input_uses;
+    std::vector<std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>> output_uses;
+  };
 
-  CountdownTrigger<MultiActionList> ready_trigger;
+  TaskCollectionToken(size_t in_size) : size(in_size) { }
+  size_t size;
 
-  std::shared_ptr<ControlBlock> control_block;
-
-  // Currently only used with commutative:
-  std::mutex commutative_mtx;
-  ResettableBooleanTrigger<MultiActionList> comm_in_flow_release_trigger;
+  ConcurrentMap<
+    darma_runtime::types::key_t,
+    std::shared_ptr<CollectiveInvocation> // could probably be a unique_ptr
+  > collectives;
 
 };
 
-struct AntiFlow {
-  AntiFlow() : ready_trigger(0) { }
-
-  AntiFlow(size_t initial_count) : ready_trigger(initial_count) { }
-
-  CountdownTrigger<MultiActionList> ready_trigger;
-};
 
 } // end namespace simple_backend
 
-#endif //DARMASIMPLECVBACKEND_FLOW_HPP
+#endif //DARMASIMPLEBACKEND_TASK_COLLECTION_TOKEN_HPP

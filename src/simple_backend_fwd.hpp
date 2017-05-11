@@ -52,6 +52,8 @@ struct AntiFlow;
 struct Worker;
 struct TaskCollectionToken;
 
+struct CollectionControlBlock;
+
 } // end namespace simple_backend
 
 #endif //DARMASIMPLECVBACKEND_SIMPLE_BACKEND_FWD_HPP

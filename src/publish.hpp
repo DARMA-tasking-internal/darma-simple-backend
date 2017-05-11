@@ -47,6 +47,9 @@
 
 #include <unordered_map>
 #include <mutex>
+
+#include "data_structures/concurrent_map.hpp"
+
 #include "simple_backend_fwd.hpp"
 #include "trigger.hpp"
 
@@ -55,99 +58,18 @@
 namespace std {
 
 template <>
-struct hash<darma_runtime::types::key_t> {
-  std::size_t operator()(darma_runtime::types::key_t const& key) const {
-    return typename darma_runtime::detail::key_traits<darma_runtime::types::key_t>::hasher{}(key);
-  }
-};
+struct hash<darma_runtime::types::key_t>
+  : darma_runtime::detail::key_traits<darma_runtime::types::key_t>::hasher
+{ };
+
+template <>
+struct equal_to<darma_runtime::types::key_t>
+  :  darma_runtime::detail::key_traits<darma_runtime::types::key_t>::key_equal
+{ };
 
 } // end namespace std
 
-
 namespace simple_backend {
-
-template <typename Key, typename Value,
-  typename Hasher = std::hash<Key>,
-  typename Equal = std::equal_to<Key>
->
-class ConcurrentMap {
-
-  private:
-
-    // Just put locks around everything for now.  We'll do something faster
-    // some other time
-    std::recursive_mutex mutex_;
-
-    std::unordered_map<Key, Value, Hasher, Equal> data_;
-
-  public:
-
-    template <typename Callable, typename... Args>
-    void evaluate_or_emplace(Key const& key,
-      Callable&& callable,
-      Args&&... args
-    ) {
-      std::lock_guard<std::recursive_mutex> lg(mutex_);
-      auto found = data_.find(key);
-      if(found != data_.end()) {
-        std::forward<Callable>(callable)(found->second);
-      }
-      else {
-        data_.emplace_hint(
-          found,
-          std::piecewise_construct,
-          std::forward_as_tuple(key),
-          std::forward_as_tuple(std::forward<Args>(args)...)
-        );
-      }
-    }
-
-    template <typename Callable>
-    void evaluate_at(
-      Key const& key,
-      Callable&& callable
-    ) {
-      std::lock_guard<std::recursive_mutex> lg(mutex_);
-      std::forward<Callable>(callable)(data_[key]);
-    }
-
-    template <typename Callable, typename FirstCallable, typename EmplaceArgsFwdTuple, typename... Args>
-    void evaluate_or_evaluate_first(
-      Key const& key,
-      Callable&& callable,
-      FirstCallable&& first_callable,
-      EmplaceArgsFwdTuple&& emplace_args,
-      Args&&... args
-    ) {
-      std::lock_guard<std::recursive_mutex> lg(mutex_);
-      auto found = data_.find(key);
-      if(found != data_.end()) {
-        assert(data_.size() > 0);
-        std::forward<Callable>(callable)(
-          found->second,
-          std::forward<Args>(args)...
-        );
-      }
-      else {
-        auto spot = data_.emplace_hint(
-          found,
-          std::piecewise_construct,
-          std::forward_as_tuple(key),
-          std::forward<EmplaceArgsFwdTuple>(emplace_args)
-        );
-        std::forward<FirstCallable>(first_callable)(
-          spot->second,
-          std::forward<Args>(args)...
-        );
-      }
-    }
-
-    void erase(Key const& key) {
-      std::lock_guard<std::recursive_mutex> lg(mutex_);
-      data_.erase(key);
-    }
-};
-
 
 struct PublicationTableEntry {
   struct Impl {

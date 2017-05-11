@@ -46,6 +46,8 @@
 #include "flow.hpp"
 #include "worker.hpp"
 #include "util.hpp"
+#include "task_collection_token.hpp"
+
 #include "debug.hpp"
 
 #include <darma/interface/frontend/top_level.h>

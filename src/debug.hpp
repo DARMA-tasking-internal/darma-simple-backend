@@ -56,7 +56,7 @@
 
 #include <darma/interface/frontend/use.h>
 
-#include "concurrent_list.hpp"
+#include "data_structures/concurrent_list.hpp"
 
 namespace simple_backend {
 
