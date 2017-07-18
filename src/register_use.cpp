@@ -65,6 +65,7 @@ Runtime::register_use(use_pending_registration_t* use) {
   // TODO make this debugging work again
   _SIMPLE_DBG_DO([use](auto& state) { state.add_registered_use(use); });
 
+
   //----------------------------------------------------------------------------
   // <editor-fold desc="in flow relationship"> {{{2
 
@@ -141,20 +142,27 @@ Runtime::register_use(use_pending_registration_t* use) {
       in_flow = std::make_shared<Flow>(
         std::make_shared<ControlBlock>(use->get_handle(), nullptr)
       );
+
+      // Increment the ready trigger so that the release of the fetching trigger
+      // can decrement it.
       in_flow->ready_trigger.increment_count();
       coll_cntrl->current_published_entries.evaluate_at(
         std::make_pair(
           *in_rel.version_key(), in_rel.index()
         ),
         [in_flow](PublicationTableEntry& entry) {
+          // Create the publication table entry if it doesn't already exist
           if(not entry.entry) {
             entry.entry = std::make_shared<PublicationTableEntry::Impl>();
           }
+
+          // tell the fetching trigger to alert us when the data is ready
           entry.entry->fetching_trigger.add_action([entry_entry=entry.entry, in_flow]{
             in_flow->control_block->data =
               (*entry_entry->source_flow)->control_block->data;
             in_flow->ready_trigger.decrement_count();
           });
+
         }
       );
 
@@ -193,6 +201,8 @@ Runtime::register_use(use_pending_registration_t* use) {
     case FlowRelationship::SameCollection : {
       assert(anti_in_rel.related_anti_flow());
       anti_in_flow = *anti_in_rel.related_anti_flow();
+      // we may need to check if it's an indexed_fetching_antiflow here and do
+      // something special for breaking antidependency cycles
       break;
     }
     case FlowRelationship::Next :
@@ -363,7 +373,9 @@ Runtime::register_use(use_pending_registration_t* use) {
         (*in_rel.related_flow())->control_block
       );
       anti_out_flow = std::make_shared<AntiFlow>();
+      anti_out_flow->is_index_fetching_antiflow = true;
 
+      // TODO this is where we'd need to insert a hook that can break the antidependency cycle in some publish-fetch programs
       coll_cntrl->current_published_entries.evaluate_at(
         std::make_pair(
           *anti_out_rel.version_key(), anti_out_rel.index()
@@ -391,6 +403,15 @@ Runtime::register_use(use_pending_registration_t* use) {
 
   // </editor-fold> end anti_out flow relationship }}}2
   //----------------------------------------------------------------------------
+
+  //if(anti_in_flow and anti_in_flow->is_index_fetching_antiflow and use->is_anti_dependency()) {
+  //  // TODO more strategies
+  //  // STRATEGY 1:  Just add a copy directly to the in-flow's ready_trigger
+  //  auto control_block = in_flow->control_block;
+  //  in_flow->ready_trigger.add_action([control_block, in_flow, anti_in_flow]{
+  //
+  //  });
+  //}
 
 }
 

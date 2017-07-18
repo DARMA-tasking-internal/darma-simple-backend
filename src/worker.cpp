@@ -42,6 +42,10 @@
 //@HEADER
 */
 
+#if SIMPLE_BACKEND_USE_KOKKOS
+#include <Kokkos_Core.hpp>
+#endif
+
 #include <random>
 
 #include "runtime.hpp"
@@ -84,7 +88,7 @@ void Worker::run_task(Runtime::task_unique_ptr&& task) {
 
 }
 
-void Worker::run_work_loop(size_t n_threads_total) {
+void Worker::run_work_loop(size_t n_threads_total, size_t threads_per_partition) {
 
   std::random_device rd;
   std::seed_seq seed{ rd(), rd(),rd(), rd(), rd(), rd(), rd(), rd(), rd() };
@@ -93,7 +97,12 @@ void Worker::run_work_loop(size_t n_threads_total) {
 
   Runtime::this_worker_id = id;
 
+  // TODO reinstate tracking of "dorment" workers with Kokkow
+  // until we get a real task, we're considered "dorment"
+  ++Runtime::instance->dorment_workers;
+
   while(true) {
+
     auto ready = ready_tasks.get_and_pop_front();
     // "Random" version:
     //auto ready = steal_dis(steal_gen) % 2 == 0 ?
@@ -103,9 +112,41 @@ void Worker::run_work_loop(size_t n_threads_total) {
     if(ready) {
       // pop_front was successful, run the task
 
+      // We're not dorment any more
+      --Runtime::instance->dorment_workers;
+
       // if it's null, this is the signal to stop the workers
-      if(ready->get() == nullptr) { break; }
-      else { run_task(std::move(*ready.get())); }
+      if(ready->task.get() == nullptr) {
+        // It's a special message; currently both mean "break", so do that.
+        break;
+      }
+#if SIMPLE_BACKEND_USE_KOKKOS
+      else if(ready->task->is_data_parallel_task()) {
+        size_t partition = id / threads_per_partition;
+        size_t master = partition * threads_per_partition;
+        Runtime::instance->ready_kokkos_tasks[partition].emplace_back(
+          std::move(*ready)
+        );
+
+        // tell everyone in my partition to break
+        for(size_t iworker = master; iworker < master + threads_per_partition; ++iworker) {
+          if(iworker != id) {
+            Runtime::instance->workers[iworker].ready_tasks.emplace_front(
+              ReadyTaskHolder::NeededForKokkosWork
+            );
+          }
+        }
+
+        // We also need to break out of the omp parallel region that we're running in
+        break;
+
+      }
+#endif
+      else {
+        run_task(std::move(ready->task));
+      }
+
+      ++Runtime::instance->dorment_workers;
 
     } // end if any ready tasks exist
     else {
@@ -118,24 +159,76 @@ void Worker::run_work_loop(size_t n_threads_total) {
       //  Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back()
       //    : Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_front();
       if(new_ready) {
-        if (new_ready->get() == nullptr) {
+        if (new_ready->task.get() == nullptr) {
           // oops, we stole the termination signal.  Put it back!
           Runtime::instance->workers[steal_from].ready_tasks.emplace_back(
-            nullptr
+            new_ready->message
           );
+#if SIMPLE_BACKEND_USE_KOKKOS
+        }
+        else if (new_ready->task->is_data_parallel_task()) {
+          // Don't steal those either; put it back
+          Runtime::instance->workers[steal_from].ready_tasks.emplace_back(
+            std::move(*new_ready)
+          );
+#endif
         } else {
-          run_task(std::move(*new_ready.get()));
+          // We're not dorment any more
+          --Runtime::instance->dorment_workers;
+
+          run_task(std::move(new_ready->task));
+
+          // and we're dorment again
+          ++Runtime::instance->dorment_workers;
         }
       }
+      // TODO decrementing here is probably not the best idea (could cause livelock).  We should use a lock or something to accomplish the same effect
+      else if(Runtime::instance->dorment_workers-- == n_threads_total) {
+
+        // We need to break a publish antidependency via copy.
+        // We might not actually need to do so, but as long as our overheads are
+        // low, we shouldn't "accidentally" end up here very often
+        // We *should* be the only ones able to get here at any given time.
+
+        //std::printf(
+        //  "Reached state where all threads are dormant; may have"
+        //  "publish-fetch anti-dependency-induced deadlock\n"
+        //);
+
+        // General strategy:
+        //   * grab an anti-in flow that began life as an indexed_fetching anti-out flow
+        //   * increment the ready trigger so that the publication entry becoming ready
+        //       and decrement it doesn't cause it to become ready (we'll have to be careful with this!!!)
+        //   * get the control block of the related in flow.  (check if it's ready;
+        //     if not, undo all of the above stuff and pick another one)
+        //   * copy the data in that control block to a new control block.
+        //   * point the in flow to that control block
+        //   * mark a flag or something so that the release by the publication entry
+        //     won't make the anti-out flow ready trigger freak out about going below 0
+        //   * release the anti-in flow
+
+        ++Runtime::instance->dorment_workers;
+
+      }
+      else {
+        // Re-increment to account for the atomic fetch-decrement in the previous if statement
+        ++Runtime::instance->dorment_workers;
+      }
+
     }
+
   } // end while true loop
 
 }
 
-void Worker::spawn_work_loop(size_t n_threads_total) {
+void Worker::spawn_work_loop(size_t n_threads_total, size_t threads_per_partition) {
 
-  thread_ = std::make_unique<std::thread>([this, n_threads_total]{
-    run_work_loop(n_threads_total);
+#if SIMPLE_BACKEND_USE_OPENMP
+  run_work_loop(n_threads_total, threads_per_partition);
+#else
+  thread_ = std::make_unique<std::thread>([this, n_threads_total, threads_per_partition]{
+    run_work_loop(n_threads_total, threads_per_partition);
   });
+#endif
 
 }

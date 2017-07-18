@@ -38,8 +38,32 @@ include_directories(
 
 option(ENABLE_BACKEND_DEBUGGING "Whether to turn on debugging features for the backend itself" Off)
 
+option(BACKEND_USE_OPENMP "Whether or not to use OpenMP threads to back the simple backend" Off)
+option(BACKEND_USE_KOKKOS "Whether or not to use Kokkos to back the simple backend, enabling Kokkos compatibility" Off)
+option(KOKKOS_PATH "Path to Kokkos installation (only used for BACKEND_USE_KOKKOS)" "")
+
 if(ENABLE_BACKEND_DEBUGGING)
     add_definitions(-DSIMPLE_BACKEND_DEBUG)
+endif()
+
+if(BACKEND_USE_OPENMP)
+    find_package(OpenMP REQUIRED)
+    add_definitions(-DSIMPLE_BACKEND_USE_OPENMP)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+else()
+    if(BACKEND_USE_KOKKOS)
+        if (NOT KOKKOS_PATH)
+          message(FATAL_ERROR "Need KOKKOS_PATH to be defined")
+        endif()
+        find_package(OpenMP REQUIRED)
+        include(${KOKKOS_PATH}/kokkos.cmake)
+        add_definitions(-DSIMPLE_BACKEND_USE_KOKKOS)
+        #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KOKKOS_CPPFLAGS} ${KOKKOS_CXXFLAGS} ${KOKKOS_LIBS} ${KOKKOS_LDFLAGS}")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KOKKOS_CPPFLAGS} ${KOKKOS_CXXFLAGS}")
+        #link_directories(${KOKKOS_PATH}/lib)
+    else()
+        find_package( Threads REQUIRED )
+    endif()
 endif()
 
 add_subdirectory(src)
@@ -49,12 +73,12 @@ else()
   add_subdirectory(tests)
 endif()
 
-find_package( Threads REQUIRED )
 
 export ( TARGETS darma_simple_backend
   FILE "${PROJECT_BINARY_DIR}/DarmaSimpleBackendDepends.cmake"
 )
 export ( PACKAGE darma_simple_backend )
+
 
 configure_file (cmake/DarmaSimpleBackendConfig.cmake.in
   "${PROJECT_BINARY_DIR}/DarmaSimpleBackendConfig.cmake" @ONLY)
@@ -69,3 +93,7 @@ install (FILES
   DESTINATION cmake COMPONENT dev)
 
 install (EXPORT DarmaSimpleBackendDepends DESTINATION cmake COMPONENT dev)
+
+if(BACKEND_USE_KOKKOS)
+    set_target_properties(darma_simple_backend PROPERTIES LINK_FLAGS "${KOKKOS_LIBS} ${KOKKOS_LDFLAGS}")
+endif()

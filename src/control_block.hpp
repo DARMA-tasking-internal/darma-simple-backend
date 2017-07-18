@@ -68,8 +68,10 @@ struct ControlBlock {
 
   public:
 
+    struct copy_underlying_data_tag_t { };
+
     ControlBlock() : handle(nullptr), owns_data(false) { }
-    ControlBlock(
+    explicit ControlBlock(
       std::shared_ptr<darma_runtime::abstract::frontend::Handle const> in_handle
     ) : handle(in_handle) {
       if(handle) {
@@ -87,6 +89,11 @@ struct ControlBlock {
       void* in_data
     ) : handle(in_handle), data(in_data), owns_data(false)
     { }
+    // Copy for fetching
+    explicit ControlBlock(
+      copy_underlying_data_tag_t,
+      std::shared_ptr<ControlBlock> other_block
+    );
 
     ControlBlock(void* in_data, std::shared_ptr<CollectionControlBlock> parent_coll, std::size_t collection_index)
       : handle(nullptr), data(in_data), owns_data(false),
@@ -150,6 +157,31 @@ struct CollectionControlBlock : ControlBlock {
   > current_published_entries;
 
 };
+
+inline
+ControlBlock::ControlBlock(
+  copy_underlying_data_tag_t,
+  std::shared_ptr<ControlBlock> other_block
+) : handle(other_block->handle), data(nullptr), owns_data(true)
+{
+  if(!handle) {
+    assert(other_block->parent_collection);
+    handle = other_block->parent_collection->handle;
+  }
+  data = ::operator new(handle->get_serialization_manager()->get_metadata_size());
+  auto ser_pol = darma_runtime::abstract::backend::SerializationPolicy();
+
+  size_t packed_size = handle->get_serialization_manager()->get_packed_data_size(
+    other_block->data, &ser_pol
+  );
+  char* packed_buffer = new char[packed_size];
+
+  handle->get_serialization_manager()->pack_data(other_block->data, packed_buffer, &ser_pol);
+
+  handle->get_serialization_manager()->unpack_data(data, packed_buffer, &ser_pol);
+
+  delete[] packed_buffer;
+}
 
 } // end namespace simple_backend
 

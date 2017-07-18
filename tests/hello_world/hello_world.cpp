@@ -10,6 +10,9 @@ void darma_main_task(std::vector<std::string> args) {
   auto i = initial_access<int>();
 
   std::cout << "Hello World from top-level task" << std::endl;
+  create_work([=]{
+    i.set_value(0xFEEDFACE);
+  });
 
   create_work([=]{
     *i = 42;

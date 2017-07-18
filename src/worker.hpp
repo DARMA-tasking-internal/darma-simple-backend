@@ -51,6 +51,7 @@
 #include <darma/interface/backend/runtime.h>
 
 #include "data_structures/concurrent_list.hpp"
+#include "ready_task_holder.hpp"
 
 namespace simple_backend {
 
@@ -58,34 +59,41 @@ namespace simple_backend {
 struct Worker {
   private:
 
+#if !defined(SIMPLE_BACKEND_USE_OPENMP)
     std::unique_ptr<std::thread> thread_;
+#endif
 
   public:
 
     using task_unique_ptr = darma_runtime::abstract::backend::Runtime::task_unique_ptr;
 
-    ConcurrentDeque<task_unique_ptr> ready_tasks;
+    ConcurrentDeque<ReadyTaskHolder> ready_tasks;
 
     size_t id;
 
     Worker(size_t id) : id(id) { }
 
     Worker(Worker&& other)
-      : thread_(std::move(other.thread_)),
+      :
+#if !defined(SIMPLE_BACKEND_USE_OPENMP)
+        thread_(std::move(other.thread_)),
+#endif
         ready_tasks(std::move(other.ready_tasks)),
         id(other.id)
     { }
 
 
-    void spawn_work_loop(size_t n_threads_total);
+    void spawn_work_loop(size_t n_threads_total, size_t threads_per_partition);
 
-    void run_work_loop(size_t n_threads_total);
+    void run_work_loop(size_t n_threads_total, size_t threads_per_partition);
 
     void run_task(task_unique_ptr&& task);
 
     void join() {
+#if !defined(SIMPLE_BACKEND_USE_OPENMP) && !defined(SIMPLE_BACKEND_USE_KOKKOS)
       assert(thread_);
       thread_->join();
+#endif
     }
 
 };

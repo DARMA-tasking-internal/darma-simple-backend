@@ -150,6 +150,8 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
   bool allow_run_on_stack
 ) {
 
+  allow_run_on_stack = allow_run_on_stack and not task_->is_data_parallel_task();
+
   // Commutative general strategy:
   // - try to obtain all locks with an iterator analog of std::try_lock
   // - if it fails, add an action that tries again to the ready_trigger list of the

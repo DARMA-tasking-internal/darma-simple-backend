@@ -42,6 +42,14 @@
 //@HEADER
 */
 
+#if SIMPLE_BACKEND_USE_OPENMP
+#include <omp.h>
+#endif
+
+#if SIMPLE_BACKEND_USE_KOKKOS
+#include <Kokkos_Core.hpp>
+#endif
+
 #include "runtime.hpp"
 #include "flow.hpp"
 #include "worker.hpp"
@@ -53,6 +61,8 @@
 #include <darma/interface/frontend/top_level.h>
 
 #include <darma.h>
+
+#define COPY_ALL_PUBLISHES 1
 
 using namespace simple_backend;
 
@@ -102,6 +112,7 @@ Runtime::Runtime(task_unique_ptr&& top_level_task, std::size_t nthreads, std::si
     }
   });
 
+  // TODO in openmp mode, we may want to do this initialization on the thread that will own the worker (for locality purposes)
   // Create the workers
   for(size_t i = 0; i < nthreads_; ++i) {
     workers.emplace_back(i);
@@ -178,6 +189,44 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
 void
 Runtime::spin_up_worker_threads()
 {
+#if SIMPLE_BACKEND_USE_OPENMP
+#pragma omp parallel num_threads(nthreads_) proc_bind(spread)
+  {
+    workers[omp_get_thread_num()].run_work_loop(nthreads_, 1);
+  }
+  // End omp region
+#elif SIMPLE_BACKEND_USE_KOKKOS
+  const int threads_per_partition = nthreads_ / n_kokkos_partitions;
+  Runtime::instance->ready_kokkos_tasks.resize(n_kokkos_partitions);
+  Kokkos::OpenMP::partition_master([&](int partition_id, int n_partitions) {
+    while(not Runtime::instance->shutdown_trigger.get_triggered()) {
+      //#pragma omp parallel num_threads(nthreads_ / n_kokkos_partitions)
+      Kokkos::parallel_for(threads_per_partition, [=](int i){
+
+        workers[
+          partition_id * threads_per_partition + i // omp_get_thread_num()
+        ].run_work_loop(nthreads_, threads_per_partition);
+
+      }); // end partition parallel
+
+      if (Runtime::instance->shutdown_trigger.get_triggered()) {
+        break;
+      } else {
+        assert(Kokkos::Impl::t_openmp_instance);
+        // Exited to run a Kokkos task, so run it
+        auto ktask =
+          Runtime::instance->ready_kokkos_tasks[partition_id].get_and_pop_front();
+        assert(Kokkos::Impl::t_openmp_instance);
+        assert(ktask);
+        assert(ktask->task->is_data_parallel_task());
+        workers[partition_id
+          * threads_per_partition].run_task(std::move(ktask->task));
+
+      }
+    }
+
+  }, n_kokkos_partitions, nthreads_ / n_kokkos_partitions);
+#else
   // needs to be two seperate loops to make sure ready tasks is initialized on
   // all workers.  Also, only spawn threads on 1-n
   for(size_t i = 1; i < nthreads_; ++i) {
@@ -185,6 +234,7 @@ Runtime::spin_up_worker_threads()
   }
 
   workers[0].run_work_loop(nthreads_);
+#endif
 }
 
 
@@ -205,12 +255,38 @@ Runtime::publish_use(
       pub_use->get_in_flow()->control_block->collection_index
     ),
     [this, details, &pub_use] (PublicationTableEntry& entry) {
+      // Create the entry if it doesn't already exist
       if(not entry.entry) {
         entry.entry = std::make_shared<PublicationTableEntry::Impl>();
       }
+
+      // Advance the release trigger so that the data isn't released until
+      // all of the fetchers have read it
       entry.entry->release_trigger.advance_count(details->get_n_fetchers());
+#if COPY_ALL_PUBLISHES
+      auto control_blk = pub_use->get_in_flow()->control_block;
+      pub_use->get_in_flow()->ready_trigger.add_action([
+        this, entry, control_blk, pub_use=std::move(pub_use)
+      ]{
+          *entry.entry->source_flow = std::make_shared<Flow>(
+            std::make_shared<ControlBlock>(
+              ControlBlock::copy_underlying_data_tag_t{},
+              control_blk
+            ),
+            1 // so that we can make it ready when the copy completes
+          );
+          entry.entry->source_flow->get()->ready_trigger.decrement_count();
+          release_use(
+            darma_runtime::abstract::frontend::use_cast<
+              darma_runtime::abstract::frontend::UsePendingRelease*
+            >(pub_use.get())
+          );
+      });
+#else
       *entry.entry->source_flow = pub_use->get_in_flow();
 
+      // Increment the anti-out flow of the published entry, then add a decrement
+      // to the release trigger
       auto& pub_anti_out = pub_use->get_anti_out_flow();
       pub_anti_out->ready_trigger.increment_count();
       entry.entry->release_trigger.add_action([
@@ -223,7 +299,10 @@ Runtime::publish_use(
           >(pub_use.get())
         );
       });
+#endif
 
+      // The fetching trigger count starts at 1 so that it doesn't get triggered
+      // while we're setting up the release
       entry.entry->fetching_trigger.decrement_count();
     }
   );

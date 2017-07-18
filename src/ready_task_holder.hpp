@@ -2,9 +2,9 @@
 //@HEADER
 // ************************************************************************
 //
-//                        main.cpp
+//                      ready_task_holder.hpp
 //                         DARMA
-//              Copyright (C) 2016 Sandia Corporation
+//              Copyright (C) 2017 Sandia Corporation
 //
 // Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
@@ -36,76 +36,41 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact David S. Hollman (dshollm@sandia.gov)
+// Questions? Contact the DARMA developers (darma-admins@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
 */
 
+#ifndef DARMASIMPLEBACKEND_READY_TASK_HOLDER_HPP
+#define DARMASIMPLEBACKEND_READY_TASK_HOLDER_HPP
+
+#include <darma/interface/backend/runtime.h>
+
+namespace simple_backend {
+
+struct ReadyTaskHolder {
+  using task_unique_ptr = darma_runtime::abstract::backend::Runtime::task_unique_ptr;
+
+
+  typedef enum special_message {
+    NoMessage,
+    AllTasksDone
 #if SIMPLE_BACKEND_USE_KOKKOS
-#include <Kokkos_Core.hpp>
+    , NeededForKokkosWork
 #endif
+  } special_message_t;
 
-#include "runtime.hpp"
-#include "debug.hpp"
+  task_unique_ptr task = nullptr;
 
-#if SIMPLE_BACKEND_DEBUG
+  special_message_t message = NoMessage;
 
-#include <signal.h>
-#include <csignal>
-#include <unistd.h>
+  ReadyTaskHolder(task_unique_ptr&& in_task) : task(std::move(in_task)) { }
 
-std::unique_ptr<simple_backend::DebugWorker>
-simple_backend::DebugWorker::instance = std::make_unique<simple_backend::DebugWorker>();
+  ReadyTaskHolder(special_message_t in_message) : task(nullptr), message(in_message) { }
 
-extern "C" {
-void sig_usr2_handler(int signal) {
-  simple_backend::DebugWorker::instance->empty_queue_actions.emplace_back(
-    ::simple_backend::make_debug_action_ptr([](auto& state){
-      ::simple_backend::DebugState::print_state(state);
-    })
-  );
-}
-} // end extern "C"
-#endif
+};
 
-int main(int argc, char** argv) {
+} // end namespace simple_backend
 
-#if SIMPLE_BACKEND_USE_KOKKOS
-  Kokkos::initialize(argc, argv);
-#endif
-
-#if SIMPLE_BACKEND_DEBUG
-
-  std::cout << "Running program with simple debug backend enabled.  Send signal SIGUSR2"
-    " to process " << std::to_string(getpid()) << " to introspect state." << std::endl;
-  std::signal(SIGUSR2, sig_usr2_handler);
-
-
-  simple_backend::DebugWorker::instance->spawn_work_loop();
-#endif
-
-  simple_backend::Runtime::initialize_top_level_instance(argc, argv);
-  simple_backend::Runtime::instance->spin_up_worker_threads();
-  simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
-
-#if SIMPLE_BACKEND_DEBUG
-  simple_backend::DebugWorker::instance->actions.emplace_back(nullptr);
-  simple_backend::DebugWorker::instance->worker_thread->join();
-#endif
-
-#if SIMPLE_BACKEND_USE_KOKKOS
-  Kokkos::finalize();
-#endif
-
-}
-
-namespace darma_runtime {
-
-void
-abort(std::string const& abort_str) {
-  std::cerr << "Aborting with message: " << abort_str << std::endl;
-  std::abort();
-}
-
-} // end namespace darma_runtime
+#endif //DARMASIMPLEBACKEND_READY_TASK_HOLDER_HPP

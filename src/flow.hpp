@@ -73,6 +73,8 @@ struct AntiFlow {
   AntiFlow(size_t initial_count) : ready_trigger(initial_count) { }
 
   CountdownTrigger<MultiActionList> ready_trigger;
+
+  bool is_index_fetching_antiflow = false;
 };
 
 } // end namespace simple_backend

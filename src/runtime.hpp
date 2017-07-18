@@ -82,10 +82,14 @@ class Runtime
         void enqueue_or_run(size_t worker_id, bool allow_run_on_stack);
     };
 
+
   private:
 
     // Maximum concurrency
     size_t nthreads_;
+#if SIMPLE_BACKEND_USE_KOKKOS
+    size_t n_kokkos_partitions = 2; // hard-wire for now
+#endif
 
     size_t lookahead_;
     std::atomic<size_t> pending_tasks_ = { 0 };
@@ -199,6 +203,11 @@ class Runtime
     static thread_local std::size_t this_worker_id;
 
     CountdownTrigger<SingleAction> shutdown_trigger;
+    std::atomic<size_t> dorment_workers = { 0 };
+
+#if SIMPLE_BACKEND_USE_KOKKOS
+    std::vector<ConcurrentDeque<ReadyTaskHolder>> ready_kokkos_tasks;
+#endif
 
     std::vector<Worker> workers;
 
@@ -211,6 +220,8 @@ class Runtime
     static void wait_for_top_level_instance_to_shut_down();
 
 };
+
+
 
 } // end namespace simple_backend
 
