@@ -92,6 +92,8 @@ class Runtime
 #endif
 
     size_t lookahead_;
+    // TODO expose this as a command line option
+    size_t max_task_depth_ = 10;
     std::atomic<size_t> pending_tasks_ = { 0 };
 
   public:
@@ -201,6 +203,7 @@ class Runtime
     static std::unique_ptr<Runtime> instance;
     static thread_local darma_runtime::abstract::frontend::Task* running_task;
     static thread_local std::size_t this_worker_id;
+    static thread_local std::size_t thread_stack_depth;
 
     CountdownTrigger<SingleAction> shutdown_trigger;
     std::atomic<size_t> dorment_workers = { 0 };

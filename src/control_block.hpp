@@ -150,13 +150,34 @@ struct CollectionControlBlock : ControlBlock {
   }
 
   size_t n_indices;
-  ConcurrentMap<
-  std::pair<
-    darma_runtime::types::key_t, std::size_t>,
-    PublicationTableEntry
-  > current_published_entries;
 
 };
+
+inline void
+copy_data(
+  std::shared_ptr<darma_runtime::abstract::frontend::Handle const> handle,
+  void const* source,
+  void*& dest
+) {
+
+  if(dest == nullptr) {
+    dest = ::operator new(handle->get_serialization_manager()->get_metadata_size());
+  }
+
+  auto ser_pol = darma_runtime::abstract::backend::SerializationPolicy();
+
+  size_t packed_size = handle->get_serialization_manager()->get_packed_data_size(
+    source, &ser_pol
+  );
+  char* packed_buffer = new char[packed_size];
+
+  handle->get_serialization_manager()->pack_data(source, packed_buffer, &ser_pol);
+
+  handle->get_serialization_manager()->unpack_data(dest, packed_buffer, &ser_pol);
+
+  delete[] packed_buffer;
+
+}
 
 inline
 ControlBlock::ControlBlock(
@@ -169,18 +190,7 @@ ControlBlock::ControlBlock(
     handle = other_block->parent_collection->handle;
   }
   data = ::operator new(handle->get_serialization_manager()->get_metadata_size());
-  auto ser_pol = darma_runtime::abstract::backend::SerializationPolicy();
-
-  size_t packed_size = handle->get_serialization_manager()->get_packed_data_size(
-    other_block->data, &ser_pol
-  );
-  char* packed_buffer = new char[packed_size];
-
-  handle->get_serialization_manager()->pack_data(other_block->data, packed_buffer, &ser_pol);
-
-  handle->get_serialization_manager()->unpack_data(data, packed_buffer, &ser_pol);
-
-  delete[] packed_buffer;
+  copy_data(handle, other_block->data, data);
 }
 
 } // end namespace simple_backend

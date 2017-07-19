@@ -99,6 +99,12 @@ struct MultiActionList {
     actions_.load()->emplace_front(std::forward<ActionUniquePtr>(action_ptr));
   }
 
+  void add_all_actions_from_list(MultiActionList& other_list) {
+    auto* my_actions = actions_.load();
+    auto* other_actions = other_list.actions_.load();
+    my_actions->splice_back(*other_actions);
+  }
+
   void do_actions() {
     // Allow an action that deletes the action list (or just deletion of this
     // during run) by moving the action list member onto the stack
@@ -106,10 +112,24 @@ struct MultiActionList {
       new ConcurrentDeque<std::unique_ptr<TriggeredActionBase>>()
     );
     auto current_action = action_list->get_and_pop_front();
-    while(current_action) {
+    while (current_action) {
       current_action->get()->run();
       current_action = action_list->get_and_pop_front();
     }
+//
+//    while(true) {
+//      auto current_action = action_list->get_and_pop_front();
+//      while (current_action) {
+//        current_action->get()->run();
+//        current_action = action_list->get_and_pop_front();
+//      }
+//      action_list = actions_.exchange(
+//        new ConcurrentDeque<std::unique_ptr<TriggeredActionBase>>()
+//      );
+//      if (action_list->size() == 0) {
+//        break;
+//      }
+//    }
   }
 
 };
@@ -126,6 +146,10 @@ struct SingleAction {
   template <typename ActionUniquePtr>
   void add_priority_action(ActionUniquePtr&& action_ptr) {
     add_action(std::forward<ActionUniquePtr>(action_ptr));
+  }
+
+  void add_all_actions_from_list(SingleAction& other_list) {
+    assert(false);
   }
 
   void do_actions() {
@@ -151,6 +175,10 @@ struct SingleSpecificAction {
   template <typename ActionUniquePtr>
   void add_priority_action(ActionUniquePtr&& action_ptr) {
     add_action(std::forward<ActionUniquePtr>(action_ptr));
+  }
+
+  void add_all_actions_from_list(SingleSpecificAction& other_list) {
+    assert(false);
   }
 
   void do_actions() {
@@ -241,6 +269,30 @@ class CountdownTrigger {
         actions_.do_actions();
       }
     }
+
+    // YOU'RE RESPONSIBLE for calling do_actions
+    std::pair<bool, ActionList&>
+    decrement_count_and_return_actions_if_ready() {
+      assert(not triggered_.load());
+      if(--count_ == 0) {
+        // Ensures no tasks will be added to queue
+        triggered_.store(true);
+        return std::pair<bool, ActionList&>(true, actions_);
+      }
+      else {
+        return std::pair<bool, ActionList&>(false, actions_);
+      }
+    }
+
+    // ONLY CALL THIS FROM WITHIN AN ACTION LIST ACTION
+    void extend_action_list_from_within_action(
+      ActionList& other_list
+    ) {
+      // Note: other_list is empty afterwards
+      actions_.add_all_actions_from_list(other_list);
+    }
+
+
 
     // For approximate debugging purposes only
     std::size_t get_count() const { return count_.load(); }

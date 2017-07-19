@@ -45,9 +45,12 @@
 #ifndef DARMASIMPLECVBACKEND_FLOW_HPP
 #define DARMASIMPLECVBACKEND_FLOW_HPP
 
+#include <list>
+
 #include "trigger.hpp"
 #include "publish.hpp"
 #include "control_block.hpp"
+#include "task_collection_token.hpp"
 
 namespace simple_backend {
 
@@ -61,9 +64,19 @@ struct Flow {
 
   std::shared_ptr<ControlBlock> control_block;
 
+  // Alias shortcutting to avoid stack overflows (it's ugly for now, but at least
+  // it doesn't cause stack overflow)
+  std::atomic<bool> is_aliased = { false };
+  std::recursive_mutex alias_resolution_mutex;
+  std::list<std::shared_ptr<Flow>> aliased_to;
+
   // Currently only used with commutative:
   std::mutex commutative_mtx;
   ResettableBooleanTrigger<MultiActionList> comm_in_flow_release_trigger;
+
+  // Currently only for flow collections, and only valid after the task
+  // collection is registered and isn't read-only
+  std::shared_ptr<TaskCollectionToken> parent_collection_token = nullptr;
 
 };
 
@@ -73,6 +86,12 @@ struct AntiFlow {
   AntiFlow(size_t initial_count) : ready_trigger(initial_count) { }
 
   CountdownTrigger<MultiActionList> ready_trigger;
+
+  // Alias shortcutting to avoid stack overflows (it's ugly for now, but at least
+  // it doesn't cause stack overflow)
+  std::atomic<bool> is_aliased = { false };
+  std::mutex alias_resolution_mutex;
+  std::list<std::shared_ptr<AntiFlow>> aliased_to;
 
   bool is_index_fetching_antiflow = false;
 };

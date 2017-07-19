@@ -488,14 +488,19 @@ void Runtime::reduce_collection_use(
       use_out->get_handle()->get_serialization_manager()->destroy(
         use_out->get_in_flow()->control_block->data
       );
-      use_out->get_handle()->get_serialization_manager()->default_construct(
-        use_out->get_in_flow()->control_block->data
-      );
       auto* out_data = use_out->get_in_flow()->control_block->data;
 
       auto array_concept_manager = use_collection_in->get_handle()->get_array_concept_manager();
 
-      for(size_t idx = 0; idx < in_coll->size(); ++idx) {
+      assert(in_ctrl_block->n_indices > 0);
+
+      simple_backend::copy_data(
+        use_out->get_handle(),
+        in_ctrl_block->data_for_index(0),
+        out_data
+      );
+
+      for(size_t idx = 1; idx < in_coll->size(); ++idx) {
         auto in_data = in_ctrl_block->data_for_index(idx);
         auto nelem = array_concept_manager->n_elements(
           in_data

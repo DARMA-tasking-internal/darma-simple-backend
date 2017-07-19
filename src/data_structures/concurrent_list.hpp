@@ -47,6 +47,7 @@
 
 #include <mutex>
 #include <deque>
+#include <list>
 
 namespace simple_backend {
 
@@ -60,7 +61,7 @@ class ConcurrentDeque {
     // some other time
     std::unique_ptr<std::mutex> mutex_;
 
-    std::deque<T> data_;
+    std::list<T> data_;
 
   public:
 
@@ -86,6 +87,13 @@ class ConcurrentDeque {
       data_.emplace_back(std::forward<Args>(args)...);
     }
 
+    void splice_back(ConcurrentDeque<T>& other_list) {
+      std::unique_lock<std::mutex> my_lock_(*mutex_.get(), std::defer_lock);
+      std::unique_lock<std::mutex> other_lock_(*other_list.mutex_.get(), std::defer_lock);
+      std::lock(my_lock_, other_lock_);
+      data_.splice(data_.end(), other_list.data_);
+    }
+
     std::unique_ptr<T>
     get_and_pop_front() {
       std::lock_guard<std::mutex> lg(*mutex_);
@@ -95,6 +103,12 @@ class ConcurrentDeque {
         data_.pop_front();
         return std::move(rv);
       }
+    }
+
+    std::size_t
+    size() const {
+      std::lock_guard<std::mutex> lg(*mutex_);
+      return data_.size();
     }
 
     std::unique_ptr<T>

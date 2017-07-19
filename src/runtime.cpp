@@ -62,7 +62,6 @@
 
 #include <darma.h>
 
-#define COPY_ALL_PUBLISHES 1
 
 using namespace simple_backend;
 
@@ -73,6 +72,12 @@ darma_runtime::abstract::frontend::Task* Runtime::running_task = nullptr;
 
 thread_local
 std::size_t Runtime::this_worker_id = 0;
+
+thread_local
+std::size_t Runtime::thread_stack_depth = 0;
+
+std::atomic<std::size_t>
+TaskCollectionToken::next_sequence_identifier = { 0 };
 
 //==============================================================================
 
@@ -138,6 +143,7 @@ Runtime::register_task(task_unique_ptr&& task) {
     // only run on the stack if the number of pending tasks is greater than
     // or equal to the lookahead
     pending_tasks_.load() >= lookahead_
+    and thread_stack_depth < max_task_depth_
   );
 }
 
@@ -148,7 +154,19 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
   // keep the workers from shutting down until this task is done
   shutdown_trigger.increment_count();
 
-  tc->set_task_collection_token(std::make_shared<TaskCollectionToken>(tc->size()));
+  auto tc_token = std::make_shared<TaskCollectionToken>(tc->size());
+  tc->set_task_collection_token(tc_token);
+
+  for(auto&& dep : tc->get_dependencies()) {
+    if(dep->manages_collection()) {
+      // currently only implemented for modify/modify task collections
+      // TODO do this for read only and other stuff.  (probably need something like a UseCollectionToken...)
+      assert(dep->is_anti_dependency());
+
+      dep->get_in_flow()->parent_collection_token = tc_token;
+
+    }
+  }
 
   for(size_t i = 0; i < tc->size(); ++i) {
     // Enqueueing another task, so increment shutdown ready_trigger
@@ -156,6 +174,7 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
 
     // PendingTaskHolder deletes itself, so this isn't a memory leak
     auto* holder = new PendingTaskHolder(tc->create_task_for_index(i));
+
 
     if(
       not darma_runtime::detail::key_traits<darma_runtime::types::key_t>::key_equal{}(
@@ -230,84 +249,14 @@ Runtime::spin_up_worker_threads()
   // needs to be two seperate loops to make sure ready tasks is initialized on
   // all workers.  Also, only spawn threads on 1-n
   for(size_t i = 1; i < nthreads_; ++i) {
-    workers[i].spawn_work_loop(nthreads_);
+    workers[i].spawn_work_loop(nthreads_, 1);
   }
 
-  workers[0].run_work_loop(nthreads_);
+  workers[0].run_work_loop(nthreads_, 1);
 #endif
 }
 
 
-//==============================================================================
-
-void
-Runtime::publish_use(
-  std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>&& pub_use,
-  darma_runtime::abstract::frontend::PublicationDetails* details
-) {
-  assert(pub_use->get_in_flow()->control_block->parent_collection);
-
-  auto parent_cntrl = pub_use->get_in_flow()->control_block->parent_collection;
-
-  parent_cntrl->current_published_entries.evaluate_at(
-    std::make_pair(
-      details->get_version_name(),
-      pub_use->get_in_flow()->control_block->collection_index
-    ),
-    [this, details, &pub_use] (PublicationTableEntry& entry) {
-      // Create the entry if it doesn't already exist
-      if(not entry.entry) {
-        entry.entry = std::make_shared<PublicationTableEntry::Impl>();
-      }
-
-      // Advance the release trigger so that the data isn't released until
-      // all of the fetchers have read it
-      entry.entry->release_trigger.advance_count(details->get_n_fetchers());
-#if COPY_ALL_PUBLISHES
-      auto control_blk = pub_use->get_in_flow()->control_block;
-      pub_use->get_in_flow()->ready_trigger.add_action([
-        this, entry, control_blk, pub_use=std::move(pub_use)
-      ]{
-          *entry.entry->source_flow = std::make_shared<Flow>(
-            std::make_shared<ControlBlock>(
-              ControlBlock::copy_underlying_data_tag_t{},
-              control_blk
-            ),
-            1 // so that we can make it ready when the copy completes
-          );
-          entry.entry->source_flow->get()->ready_trigger.decrement_count();
-          release_use(
-            darma_runtime::abstract::frontend::use_cast<
-              darma_runtime::abstract::frontend::UsePendingRelease*
-            >(pub_use.get())
-          );
-      });
-#else
-      *entry.entry->source_flow = pub_use->get_in_flow();
-
-      // Increment the anti-out flow of the published entry, then add a decrement
-      // to the release trigger
-      auto& pub_anti_out = pub_use->get_anti_out_flow();
-      pub_anti_out->ready_trigger.increment_count();
-      entry.entry->release_trigger.add_action([
-        this, pub_anti_out, pub_use=std::move(pub_use)
-      ]{
-        pub_anti_out->ready_trigger.decrement_count();
-        release_use(
-          darma_runtime::abstract::frontend::use_cast<
-            darma_runtime::abstract::frontend::UsePendingRelease*
-          >(pub_use.get())
-        );
-      });
-#endif
-
-      // The fetching trigger count starts at 1 so that it doesn't get triggered
-      // while we're setting up the release
-      entry.entry->fetching_trigger.decrement_count();
-    }
-  );
-
-}
 
 //==============================================================================
 

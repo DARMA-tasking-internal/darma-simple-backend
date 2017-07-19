@@ -55,6 +55,8 @@
 
 using namespace simple_backend;
 
+#define ENABLE_WORK_STEALING 1
+
 void Worker::run_task(Runtime::task_unique_ptr&& task) {
 
   _SIMPLE_DBG_DO([&](auto& state){
@@ -149,6 +151,7 @@ void Worker::run_work_loop(size_t n_threads_total, size_t threads_per_partition)
       ++Runtime::instance->dorment_workers;
 
     } // end if any ready tasks exist
+#if ENABLE_WORK_STEALING
     else {
       // pop_front failed because queue was empty; try to do a steal
       auto steal_from = (steal_dis(steal_gen) + id) % n_threads_total;
@@ -183,39 +186,40 @@ void Worker::run_work_loop(size_t n_threads_total, size_t threads_per_partition)
         }
       }
       // TODO decrementing here is probably not the best idea (could cause livelock).  We should use a lock or something to accomplish the same effect
-      else if(Runtime::instance->dorment_workers-- == n_threads_total) {
-
-        // We need to break a publish antidependency via copy.
-        // We might not actually need to do so, but as long as our overheads are
-        // low, we shouldn't "accidentally" end up here very often
-        // We *should* be the only ones able to get here at any given time.
-
-        //std::printf(
-        //  "Reached state where all threads are dormant; may have"
-        //  "publish-fetch anti-dependency-induced deadlock\n"
-        //);
-
-        // General strategy:
-        //   * grab an anti-in flow that began life as an indexed_fetching anti-out flow
-        //   * increment the ready trigger so that the publication entry becoming ready
-        //       and decrement it doesn't cause it to become ready (we'll have to be careful with this!!!)
-        //   * get the control block of the related in flow.  (check if it's ready;
-        //     if not, undo all of the above stuff and pick another one)
-        //   * copy the data in that control block to a new control block.
-        //   * point the in flow to that control block
-        //   * mark a flag or something so that the release by the publication entry
-        //     won't make the anti-out flow ready trigger freak out about going below 0
-        //   * release the anti-in flow
-
-        ++Runtime::instance->dorment_workers;
-
-      }
-      else {
-        // Re-increment to account for the atomic fetch-decrement in the previous if statement
-        ++Runtime::instance->dorment_workers;
-      }
+//      else if(Runtime::instance->dorment_workers-- == n_threads_total) {
+//
+//        // We need to break a publish antidependency via copy.
+//        // We might not actually need to do so, but as long as our overheads are
+//        // low, we shouldn't "accidentally" end up here very often
+//        // We *should* be the only ones able to get here at any given time.
+//
+//        //std::printf(
+//        //  "Reached state where all threads are dormant; may have"
+//        //  "publish-fetch anti-dependency-induced deadlock\n"
+//        //);
+//
+//        // General strategy:
+//        //   * grab an anti-in flow that began life as an indexed_fetching anti-out flow
+//        //   * increment the ready trigger so that the publication entry becoming ready
+//        //       and decrement it doesn't cause it to become ready (we'll have to be careful with this!!!)
+//        //   * get the control block of the related in flow.  (check if it's ready;
+//        //     if not, undo all of the above stuff and pick another one)
+//        //   * copy the data in that control block to a new control block.
+//        //   * point the in flow to that control block
+//        //   * mark a flag or something so that the release by the publication entry
+//        //     won't make the anti-out flow ready trigger freak out about going below 0
+//        //   * release the anti-in flow
+//
+//        ++Runtime::instance->dorment_workers;
+//
+//      }
+//      else {
+//        // Re-increment to account for the atomic fetch-decrement in the previous if statement
+//        ++Runtime::instance->dorment_workers;
+//      }
 
     }
+#endif
 
   } // end while true loop
 

@@ -51,6 +51,7 @@ using namespace simple_backend;
 
 static constexpr size_t n_threads_default = 8;
 static constexpr size_t lookahead_default = 20;
+static constexpr size_t default_max_stack_depth = 20;
 
 std::vector<std::string> SimpleBackendOptions::parse_args(
   int argc, char** argv

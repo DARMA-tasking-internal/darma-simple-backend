@@ -56,6 +56,9 @@ namespace simple_backend {
 
 struct TaskCollectionToken {
 
+  static std::atomic<std::size_t> next_sequence_identifier;
+  std::size_t sequence_identifier;
+
   struct CollectiveInvocation {
     CollectiveInvocation(size_t n_contribs)
       : input_uses(),
@@ -69,13 +72,22 @@ struct TaskCollectionToken {
     std::vector<std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>> output_uses;
   };
 
-  TaskCollectionToken(size_t in_size) : size(in_size) { }
+  explicit
+  TaskCollectionToken(size_t in_size)
+    : size(in_size),
+      sequence_identifier(next_sequence_identifier++)
+  { }
   size_t size;
 
   ConcurrentMap<
     darma_runtime::types::key_t,
     std::shared_ptr<CollectiveInvocation> // could probably be a unique_ptr
   > collectives;
+
+  ConcurrentMap<
+    std::tuple<darma_runtime::types::key_t, darma_runtime::types::key_t, std::size_t>,
+    PublicationTableEntry
+  > current_published_entries;
 
 };
 

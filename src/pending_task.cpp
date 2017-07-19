@@ -220,9 +220,10 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
           delete this;
         },
         // Otherwise, just run it in place
-        // TODO enforce a maximum stack descent depth
         [this, worker_id] {
+          ++thread_stack_depth;
           Runtime::instance->workers[worker_id].run_task(std::move(task_));
+          --thread_stack_depth;
           delete this;
         }
       );

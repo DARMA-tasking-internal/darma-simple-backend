@@ -146,9 +146,10 @@ Runtime::register_use(use_pending_registration_t* use) {
       // Increment the ready trigger so that the release of the fetching trigger
       // can decrement it.
       in_flow->ready_trigger.increment_count();
-      coll_cntrl->current_published_entries.evaluate_at(
-        std::make_pair(
-          *in_rel.version_key(), in_rel.index()
+      assert(in_rel.related_flow()->get()->parent_collection_token);
+      in_rel.related_flow()->get()->parent_collection_token->current_published_entries.evaluate_at(
+        std::make_tuple(
+          use->get_handle()->get_key(), *in_rel.version_key(), in_rel.index()
         ),
         [in_flow](PublicationTableEntry& entry) {
           // Create the publication table entry if it doesn't already exist
@@ -369,16 +370,16 @@ Runtime::register_use(use_pending_registration_t* use) {
     case FlowRelationship::IndexedFetching : {
       // We need to get the published entries from the in flow
       assert(in_rel.related_flow());
-      auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(
-        (*in_rel.related_flow())->control_block
-      );
+      auto coll_token = (*in_rel.related_flow())->parent_collection_token;
+      assert(coll_token);
       anti_out_flow = std::make_shared<AntiFlow>();
       anti_out_flow->is_index_fetching_antiflow = true;
 
       // TODO this is where we'd need to insert a hook that can break the antidependency cycle in some publish-fetch programs
-      coll_cntrl->current_published_entries.evaluate_at(
-        std::make_pair(
-          *anti_out_rel.version_key(), anti_out_rel.index()
+
+      coll_token->current_published_entries.evaluate_at(
+        std::make_tuple(
+          use->get_handle()->get_key(), *anti_out_rel.version_key(), anti_out_rel.index()
         ),
         [anti_out_flow](PublicationTableEntry& entry) {
           assert(entry.entry);
