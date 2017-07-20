@@ -47,7 +47,11 @@
 #endif
 
 #if SIMPLE_BACKEND_USE_KOKKOS
-#include <Kokkos_Core.hpp>
+#  include <Kokkos_Core.hpp>
+#  if SIMPLE_BACKEND_USE_FCONTEXT
+#    include <boost/context/fcontext.hpp>
+#    define FCONTEXT_STACK_SIZE 8 * 1024 * 1024
+#  endif
 #endif
 
 #include "runtime.hpp"
@@ -79,6 +83,11 @@ std::size_t Runtime::thread_stack_depth = 0;
 std::atomic<std::size_t>
 TaskCollectionToken::next_sequence_identifier = { 0 };
 
+#if SIMPLE_BACKEND_USE_FCONTEXT
+std::vector<boost::context::fcontext_t> Runtime::darma_contexts = {};
+std::vector<boost::context::fcontext_t> Runtime::kokkos_contexts = {};
+#endif
+
 //==============================================================================
 
 void
@@ -90,10 +99,7 @@ Runtime::initialize_top_level_instance(int argc, char** argv) {
     options.parse_args(argc, argv)
   );
 
-  instance = std::make_unique<Runtime>(std::move(top_level_task),
-    options.n_threads,
-    options.lookahead
-  );
+  instance = std::make_unique<Runtime>(std::move(top_level_task), options);
 }
 
 //==============================================================================
@@ -108,12 +114,15 @@ Runtime::wait_for_top_level_instance_to_shut_down() {
 //==============================================================================
 
 // Construct from a task that is ready to run
-Runtime::Runtime(task_unique_ptr&& top_level_task, std::size_t nthreads, std::size_t lookahead)
-  : nthreads_(nthreads), shutdown_trigger(1), lookahead_(lookahead)
+Runtime::Runtime(task_unique_ptr&& top_level_task, SimpleBackendOptions const& options)
+  : nthreads_(options.n_threads), shutdown_trigger(1), lookahead_(options.lookahead)
+#if SIMPLE_BACKEND_USE_KOKKOS
+    , n_kokkos_partitions(options.kokkos_partitions)
+#endif
 {
   shutdown_trigger.add_action([this]{
     for(int i = 0; i < nthreads_; ++i) {
-      workers[i].ready_tasks.emplace_back(nullptr);
+      workers[i].ready_tasks.emplace_back(ReadyTaskHolder::AllTasksDone);
     }
   });
 
@@ -205,6 +214,20 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
 
 //==============================================================================
 
+#if SIMPLE_BACKEND_USE_FCONTEXT
+void darma_scheduler_context(intptr_t arg) {
+  auto& args = *(std::tuple<int, size_t, int>*)arg;
+  auto& worker_id = std::get<0>(args);
+  auto& nthreads = std::get<1>(args);
+  auto& threads_per_partition = std::get<2>(args);
+
+  Runtime::instance->workers[
+    worker_id
+  ].run_work_loop(nthreads, threads_per_partition);
+
+}
+#endif
+
 void
 Runtime::spin_up_worker_threads()
 {
@@ -217,8 +240,43 @@ Runtime::spin_up_worker_threads()
 #elif SIMPLE_BACKEND_USE_KOKKOS
   const int threads_per_partition = nthreads_ / n_kokkos_partitions;
   Runtime::instance->ready_kokkos_tasks.resize(n_kokkos_partitions);
+  Runtime::kokkos_contexts.resize(nthreads_);
+  Runtime::darma_contexts.resize(nthreads_);
+
   Kokkos::OpenMP::partition_master([&](int partition_id, int n_partitions) {
+#if SIMPLE_BACKEND_USE_FCONTEXT
+    std::vector<void*> partition_stacks(threads_per_partition);
+#pragma omp parallel num_threads(nthreads_ / n_kokkos_partitions)
+    {
+      partition_stacks[omp_get_thread_num()] = std::malloc(FCONTEXT_STACK_SIZE);
+      auto worker_id = partition_id * threads_per_partition + omp_get_thread_num();
+      Runtime::darma_contexts[worker_id] = boost::context::make_fcontext(
+        partition_stacks[omp_get_thread_num()], FCONTEXT_STACK_SIZE, darma_scheduler_context
+      );
+      auto args = std::tuple<int, std::size_t, int>(
+        worker_id, nthreads_, threads_per_partition
+      );
+      boost::context::jump_fcontext(
+        &Runtime::kokkos_contexts[worker_id],
+        Runtime::darma_contexts[worker_id],
+        (std::intptr_t)(&args)
+      );
+    } // end partition parallel
+#endif
     while(not Runtime::instance->shutdown_trigger.get_triggered()) {
+#if SIMPLE_BACKEND_USE_FCONTEXT
+      // jumped to run a Kokkos task, so run it
+      auto ktask = Runtime::instance->ready_kokkos_tasks[partition_id].get_and_pop_front();
+      assert(ktask);
+      assert(ktask->task->is_data_parallel_task());
+      workers[partition_id * threads_per_partition].run_task(std::move(ktask->task));
+
+#pragma omp parallel num_threads(nthreads_ / n_kokkos_partitions)
+      {
+        auto worker_id = partition_id * threads_per_partition + omp_get_thread_num();
+        boost::context::jump_fcontext(&kokkos_contexts[worker_id], darma_contexts[worker_id], 0);
+      }
+#else
       //#pragma omp parallel num_threads(nthreads_ / n_kokkos_partitions)
       Kokkos::parallel_for(threads_per_partition, [=](int i){
 
@@ -242,6 +300,11 @@ Runtime::spin_up_worker_threads()
           * threads_per_partition].run_task(std::move(ktask->task));
 
       }
+#endif
+    }
+
+    for(auto* part_stack : partition_stacks) {
+      std::free(part_stack);
     }
 
   }, n_kokkos_partitions, nthreads_ / n_kokkos_partitions);

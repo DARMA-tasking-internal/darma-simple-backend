@@ -58,6 +58,9 @@ struct SimpleBackendOptions {
 
     std::size_t n_threads;
     std::size_t lookahead;
+#if SIMPLE_BACKEND_USE_KOKKOS
+    std::size_t kokkos_partitions;
+#endif
 
 };
 

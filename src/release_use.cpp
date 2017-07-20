@@ -172,7 +172,6 @@ Runtime::release_use(use_pending_release_t* use) {
       auto& anti_in_flow = use->get_anti_in_flow();
       anti_in_flow->ready_trigger.increment_count();
       use->get_anti_out_flow()->ready_trigger.add_action([anti_in_flow]{
-        // ugly hack to avoid stack overflow:
         anti_in_flow->ready_trigger.decrement_count();
       });
 #endif

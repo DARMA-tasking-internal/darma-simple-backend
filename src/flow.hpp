@@ -47,7 +47,7 @@
 
 #include <list>
 
-#include "trigger.hpp"
+#include "data_structures/trigger.hpp"
 #include "publish.hpp"
 #include "control_block.hpp"
 #include "task_collection_token.hpp"

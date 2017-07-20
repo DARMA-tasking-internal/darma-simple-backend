@@ -51,7 +51,10 @@ using namespace simple_backend;
 
 static constexpr size_t n_threads_default = 8;
 static constexpr size_t lookahead_default = 20;
-static constexpr size_t default_max_stack_depth = 20;
+static constexpr size_t max_stack_depth_default = 20;
+#if SIMPLE_BACKEND_USE_KOKKOS
+static constexpr size_t kokkos_partitions_default = 4;
+#endif
 
 std::vector<std::string> SimpleBackendOptions::parse_args(
   int argc, char** argv
@@ -60,6 +63,10 @@ std::vector<std::string> SimpleBackendOptions::parse_args(
 
   n_threads = n_threads_default;
   lookahead = lookahead_default;
+#if SIMPLE_BACKEND_USE_KOKKOS
+  kokkos_partitions = kokkos_partitions_default;
+#endif
+
 
   auto rv = std::vector<std::string>();
   rv.emplace_back(argv[0]);
@@ -79,6 +86,14 @@ std::vector<std::string> SimpleBackendOptions::parse_args(
         assert(spot + 1 < argc);
         n_threads = std::atoi(argv[++spot]);
       }
+#if SIMPLE_BACKEND_USE_KOKKOS
+      else if(
+        arg == "--backend-kokkos-partitions"
+      ) {
+        assert(spot + 1 < argc);
+        kokkos_partitions = std::atoi(argv[++spot]);
+      }
+#endif
       else if(arg == "--backend-lookahead") {
         assert(spot + 1 < argc);
         lookahead = std::atoi(argv[++spot]);
@@ -97,6 +112,10 @@ std::vector<std::string> SimpleBackendOptions::parse_args(
 
     ++spot;
   }
+
+#if SIMPLE_BACKEND_USE_KOKKOS
+  assert(kokkos_partitions <= n_threads && n_threads % kokkos_partitions == 0);
+#endif
 
   return rv;
 }

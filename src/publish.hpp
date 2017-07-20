@@ -51,7 +51,7 @@
 #include "data_structures/concurrent_map.hpp"
 
 #include "simple_backend_fwd.hpp"
-#include "trigger.hpp"
+#include "data_structures/trigger.hpp"
 
 #include <darma/impl/key/SSO_key.h>
 

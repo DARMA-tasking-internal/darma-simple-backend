@@ -45,18 +45,23 @@
 #ifndef DARMASIMPLECVBACKEND_RUNTIME_HPP
 #define DARMASIMPLECVBACKEND_RUNTIME_HPP
 
+#if SIMPLE_BACKEND_USE_FCONTEXT
+#  include <boost/context/fcontext.hpp>
+#endif
+
 #include <memory>
 
 #include <darma/interface/backend/runtime.h>
 
 #include "data_structures/concurrent_list.hpp"
-#include "trigger.hpp"
+#include "data_structures/trigger.hpp"
 #include "worker.hpp"
 #include "flow.hpp"
 
 #include "parse_arguments.hpp"
 
 namespace simple_backend {
+
 
 class Runtime
   : public darma_runtime::abstract::backend::Runtime,
@@ -88,7 +93,7 @@ class Runtime
     // Maximum concurrency
     size_t nthreads_;
 #if SIMPLE_BACKEND_USE_KOKKOS
-    size_t n_kokkos_partitions = 2; // hard-wire for now
+    size_t n_kokkos_partitions;
 #endif
 
     size_t lookahead_;
@@ -100,7 +105,7 @@ class Runtime
 
     Runtime(
       task_unique_ptr&& top_level_task,
-      size_t n_threads, size_t lookahead
+      SimpleBackendOptions const& options
     );
 
     task_t* get_running_task() const override;
@@ -204,6 +209,10 @@ class Runtime
     static thread_local darma_runtime::abstract::frontend::Task* running_task;
     static thread_local std::size_t this_worker_id;
     static thread_local std::size_t thread_stack_depth;
+#if SIMPLE_BACKEND_USE_FCONTEXT
+    static std::vector<boost::context::fcontext_t> darma_contexts;
+    static std::vector<boost::context::fcontext_t> kokkos_contexts;
+#endif
 
     CountdownTrigger<SingleAction> shutdown_trigger;
     std::atomic<size_t> dorment_workers = { 0 };

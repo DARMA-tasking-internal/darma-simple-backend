@@ -49,7 +49,7 @@
 
 #include "simple_backend_fwd.hpp"
 
-#include "trigger.hpp"
+#include "data_structures/trigger.hpp"
 #include "publish.hpp"
 
 namespace simple_backend {

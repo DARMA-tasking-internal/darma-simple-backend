@@ -61,13 +61,18 @@ Runtime::publish_use(
 
   assert(details->get_task_collection_token());
 
+  auto pub_handle_key = pub_use->get_handle()->get_key();
+  auto coll_idx = pub_use->get_in_flow()->control_block->collection_index;
+
   details->get_task_collection_token()->current_published_entries.evaluate_at(
     std::make_tuple(
-      pub_use->get_handle()->get_key(),
+      pub_handle_key,
       details->get_version_name(),
-      pub_use->get_in_flow()->control_block->collection_index
+      coll_idx
     ),
-    [this, details, &pub_use] (PublicationTableEntry& entry) {
+    [this, details, pub_use=std::move(pub_use)] (PublicationTableEntry& entry)
+      mutable /* needs to be mutable to move pub_use into a child lambda */
+    {
       // Create the entry if it doesn't already exist
       if(not entry.entry) {
         entry.entry = std::make_shared<PublicationTableEntry::Impl>();
@@ -84,7 +89,8 @@ Runtime::publish_use(
         1 // so that we can make it ready when the copy completes
       );
 
-      pub_use->get_in_flow()->ready_trigger.add_action([
+      auto pub_use_ptr = pub_use.get();
+      pub_use_ptr->get_in_flow()->ready_trigger.add_action([
         this, entry, control_blk, pub_use=std::move(pub_use)
       ]{
         // The publish use itself holds the anti-out flow (and thus it's

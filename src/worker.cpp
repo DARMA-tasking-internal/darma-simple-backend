@@ -43,7 +43,10 @@
 */
 
 #if SIMPLE_BACKEND_USE_KOKKOS
-#include <Kokkos_Core.hpp>
+#  include <Kokkos_Core.hpp>
+#  if SIMPLE_BACKEND_USE_FCONTEXT
+#    include <boost/context/fcontext.hpp>
+#  endif
 #endif
 
 #include <random>
@@ -120,10 +123,36 @@ void Worker::run_work_loop(size_t n_threads_total, size_t threads_per_partition)
       // if it's null, this is the signal to stop the workers
       if(ready->task.get() == nullptr) {
         // It's a special message; currently both mean "break", so do that.
+#if SIMPLE_BACKEND_USE_FCONTEXT
+        if(ready->message == ReadyTaskHolder::NeededForKokkosWork) {
+          boost::context::jump_fcontext(&Runtime::darma_contexts[id], Runtime::kokkos_contexts[id], 0);
+        }
+        else {
+          assert(ready->message == ReadyTaskHolder::AllTasksDone);
+          break;
+        }
+#else
         break;
+#endif
       }
 #if SIMPLE_BACKEND_USE_KOKKOS
       else if(ready->task->is_data_parallel_task()) {
+#  if SIMPLE_BACKEND_USE_FCONTEXT
+        size_t partition = id / threads_per_partition;
+        size_t master = partition * threads_per_partition;
+        Runtime::instance->ready_kokkos_tasks[partition].emplace_back(
+          std::move(*ready)
+        );
+        // tell everyone in my partition to jump contexts
+        for(size_t iworker = master; iworker < master + threads_per_partition; ++iworker) {
+          if(iworker != id) {
+            Runtime::instance->workers[iworker].ready_tasks.emplace_front(
+              ReadyTaskHolder::NeededForKokkosWork
+            );
+          }
+        }
+        boost::context::jump_fcontext(&Runtime::darma_contexts[id], Runtime::kokkos_contexts[id], 0);
+#  else
         size_t partition = id / threads_per_partition;
         size_t master = partition * threads_per_partition;
         Runtime::instance->ready_kokkos_tasks[partition].emplace_back(
@@ -141,7 +170,7 @@ void Worker::run_work_loop(size_t n_threads_total, size_t threads_per_partition)
 
         // We also need to break out of the omp parallel region that we're running in
         break;
-
+#  endif
       }
 #endif
       else {

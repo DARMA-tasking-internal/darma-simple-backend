@@ -40,7 +40,9 @@ option(ENABLE_BACKEND_DEBUGGING "Whether to turn on debugging features for the b
 
 option(BACKEND_USE_OPENMP "Whether or not to use OpenMP threads to back the simple backend" Off)
 option(BACKEND_USE_KOKKOS "Whether or not to use Kokkos to back the simple backend, enabling Kokkos compatibility" Off)
+option(BACKEND_USE_FCONTEXT "Whether or not to use fcontext to back the simple backend with Kokkos." Off)
 option(KOKKOS_PATH "Path to Kokkos installation (only used for BACKEND_USE_KOKKOS)" "")
+option(FCONTEXT_ROOT "Path to fcontext (boost) installation (only used for BACKEND_USE_FCONTEXT)" "")
 
 if(ENABLE_BACKEND_DEBUGGING)
     add_definitions(-DSIMPLE_BACKEND_DEBUG)
@@ -58,9 +60,14 @@ else()
         find_package(OpenMP REQUIRED)
         include(${KOKKOS_PATH}/kokkos.cmake)
         add_definitions(-DSIMPLE_BACKEND_USE_KOKKOS)
-        #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KOKKOS_CPPFLAGS} ${KOKKOS_CXXFLAGS} ${KOKKOS_LIBS} ${KOKKOS_LDFLAGS}")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KOKKOS_CPPFLAGS} ${KOKKOS_CXXFLAGS}")
-        #link_directories(${KOKKOS_PATH}/lib)
+        if(BACKEND_USE_FCONTEXT)
+            if (NOT FCONTEXT_ROOT)
+                message(FATAL_ERROR "Need FCONTEXT_ROOT to be defined")
+            endif()
+            add_definitions(-DSIMPLE_BACKEND_USE_FCONTEXT)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${FCONTEXT_ROOT}/include")
+        endif()
     else()
         find_package( Threads REQUIRED )
     endif()
@@ -95,5 +102,12 @@ install (FILES
 install (EXPORT DarmaSimpleBackendDepends DESTINATION cmake COMPONENT dev)
 
 if(BACKEND_USE_KOKKOS)
-    set_target_properties(darma_simple_backend PROPERTIES LINK_FLAGS "${KOKKOS_LIBS} ${KOKKOS_LDFLAGS}")
+    if(BACKEND_USE_FCONTEXT)
+        set_target_properties(darma_simple_backend PROPERTIES 
+            LINK_FLAGS "${KOKKOS_LIBS} ${KOKKOS_LDFLAGS} -L${FCONTEXT_ROOT}/lib -lboost_context"
+        )
+    else()
+        set_target_properties(darma_simple_backend PROPERTIES 
+            LINK_FLAGS "${KOKKOS_LIBS} ${KOKKOS_LDFLAGS}")
+    endif()
 endif()

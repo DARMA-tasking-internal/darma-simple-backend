@@ -49,7 +49,7 @@
 
 #include <darma/interface/frontend/use.h>
 
-#include "trigger.hpp"
+#include "data_structures/trigger.hpp"
 #include "control_block.hpp"
 
 namespace simple_backend {
