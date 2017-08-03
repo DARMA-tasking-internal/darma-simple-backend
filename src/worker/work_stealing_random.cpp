@@ -2,9 +2,9 @@
 //@HEADER
 // ************************************************************************
 //
-//                        main.cpp
+//                      work_stealing_random.cpp
 //                         DARMA
-//              Copyright (C) 2016 Sandia Corporation
+//              Copyright (C) 2017 Sandia Corporation
 //
 // Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
@@ -36,76 +36,68 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact David S. Hollman (dshollm@sandia.gov)
+// Questions? Contact the DARMA developers (darma-admins@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
 */
 
-#if SIMPLE_BACKEND_USE_KOKKOS
-#include <Kokkos_Core.hpp>
-#endif
 
-#include "runtime/runtime.hpp"
-#include "debug.hpp"
+#include "worker.hpp"
+#include <runtime/runtime.hpp>
 
-#if SIMPLE_BACKEND_DEBUG
+using namespace simple_backend;
 
-#include <signal.h>
-#include <csignal>
-#include <unistd.h>
+#if SIMPLE_BACKEND_ENABLE_WORK_STEALING
 
-std::unique_ptr<simple_backend::DebugWorker>
-simple_backend::DebugWorker::instance = std::make_unique<simple_backend::DebugWorker>();
+void Worker::setup_work_stealing() {
 
-extern "C" {
-void sig_usr2_handler(int signal) {
-  simple_backend::DebugWorker::instance->empty_queue_actions.emplace_back(
-    ::simple_backend::make_debug_action_ptr([](auto& state){
-      ::simple_backend::DebugState::print_state(state);
-    })
-  );
-}
-} // end extern "C"
-#endif
-
-int main(int argc, char** argv) {
-
-#if SIMPLE_BACKEND_USE_KOKKOS
-  Kokkos::initialize(argc, argv);
-#endif
-
-#if SIMPLE_BACKEND_DEBUG
-
-  std::cout << "Running program with simple debug backend enabled.  Send signal SIGUSR2"
-    " to process " << std::to_string(getpid()) << " to introspect state." << std::endl;
-  std::signal(SIGUSR2, sig_usr2_handler);
-
-
-  simple_backend::DebugWorker::instance->spawn_work_loop();
-#endif
-
-  simple_backend::Runtime::initialize_top_level_instance(argc, argv);
-  simple_backend::Runtime::instance->spin_up_worker_threads();
-  simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
-
-#if SIMPLE_BACKEND_DEBUG
-  simple_backend::DebugWorker::instance->actions.emplace_back(nullptr);
-  simple_backend::DebugWorker::instance->worker_thread->join();
-#endif
-
-#if SIMPLE_BACKEND_USE_KOKKOS
-  Kokkos::finalize();
-#endif
+  std::random_device rd;
+  std::seed_seq seed{ rd(), rd(),rd(), rd(), rd(), rd(), rd(), rd(), rd() };
+  steal_generator = std::mt19937(seed);
+  std::uniform_int_distribution<> steal_dis(n_threads - 1);
 
 }
 
-namespace darma_runtime {
 
-void
-abort(std::string const& abort_str) {
-  std::cerr << "Aborting with message: " << abort_str << std::endl;
-  std::abort();
+bool Worker::try_to_steal_work() {
+
+  auto steal_from = (steal_distribution(steal_generator) + id) % n_threads;
+
+  auto new_ready = Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back();
+
+  if(new_ready) {
+    if (new_ready->task.get() == nullptr) {
+      // oops, we stole the termination signal.  Put it back!
+      Runtime::instance->workers[steal_from].ready_tasks.emplace_back(
+        new_ready->message
+      );
+      return false;
+    }
+
+    if (new_ready->task->is_data_parallel_task()) {
+      // Don't steal those either; put it back
+      Runtime::instance->workers[steal_from].ready_tasks.emplace_back(
+        std::move(*new_ready)
+      );
+      return false;
+    }
+
+    // Otherwise, we're good to go
+
+    // We're not dorment any more
+    --Runtime::instance->dorment_workers;
+
+    run_task(std::move(new_ready->task));
+
+    // and we're dorment again
+    ++Runtime::instance->dorment_workers;
+
+    return true;
+  }
+
+  return false;
 }
 
-} // end namespace darma_runtime
+
+#endif // SIMPLE_BACKEND_ENABLE_WORK_STEALING

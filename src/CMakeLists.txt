@@ -10,14 +10,38 @@ FILE(GLOB data_structures_sources_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
 FILE(GLOB data_structures_headers_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/data_structures/*.hpp"
 )
+FILE(GLOB worker_sources_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/worker/*.cpp"
+)
+FILE(GLOB worker_headers_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/worker/*.hpp"
+)
+FILE(GLOB runtime_sources_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.cpp"
+)
+FILE(GLOB runtime_headers_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*.hpp"
+)
+FILE(GLOB flow_sources_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/flow/*.cpp"
+        )
+FILE(GLOB flow_headers_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/flow/*.hpp"
+        )
 set(sources
     ${sources_GLOB}
     ${data_structures_sources_GLOB}
+    ${worker_sources_GLOB}
+    ${runtime_sources_GLOB}
+    ${flow_sources_GLOB}
 )
 set(headers
     darma_types.h darma_features.h
     ${headers_GLOB}
     ${data_structures_headers_GLOB}
+    ${worker_headers_GLOB}
+    ${runtime_headers_GLOB}
+    ${flow_headers_GLOB}
 )
 add_library(darma_simple_backend SHARED ${sources} ${headers})
 set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD 14)

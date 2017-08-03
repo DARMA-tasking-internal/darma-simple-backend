@@ -55,8 +55,8 @@
 #endif
 
 #include "runtime.hpp"
-#include "flow.hpp"
-#include "worker.hpp"
+#include "flow/flow.hpp"
+#include "worker/worker.hpp"
 #include "util.hpp"
 #include "task_collection_token.hpp"
 
@@ -75,10 +75,10 @@ thread_local
 darma_runtime::abstract::frontend::Task* Runtime::running_task = nullptr;
 
 thread_local
-std::size_t Runtime::this_worker_id = 0;
+int Runtime::this_worker_id = 0;
 
 thread_local
-std::size_t Runtime::thread_stack_depth = 0;
+int Runtime::thread_stack_depth = 0;
 
 std::atomic<std::size_t>
 TaskCollectionToken::next_sequence_identifier = { 0 };
@@ -129,7 +129,7 @@ Runtime::Runtime(task_unique_ptr&& top_level_task, SimpleBackendOptions const& o
   // TODO in openmp mode, we may want to do this initialization on the thread that will own the worker (for locality purposes)
   // Create the workers
   for(size_t i = 0; i < nthreads_; ++i) {
-    workers.emplace_back(i);
+    workers.emplace_back(i, nthreads_);
   }
   workers[0].ready_tasks.emplace_back(std::move(top_level_task));
 }
@@ -200,6 +200,8 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
       );
     }
 
+    assert(this_worker_id < nthreads_ and this_worker_id >= 0);
+
     holder->enqueue_or_run((this_worker_id + i) % nthreads_,
       // Prevent immediate execution so that all tc indices get spawned
       // and have a chance to run concurrently
@@ -223,7 +225,7 @@ void darma_scheduler_context(intptr_t arg) {
 
   Runtime::instance->workers[
     worker_id
-  ].run_work_loop(nthreads, threads_per_partition);
+  ].run_work_loop(threads_per_partition);
 
 }
 #endif
@@ -312,10 +314,10 @@ Runtime::spin_up_worker_threads()
   // needs to be two seperate loops to make sure ready tasks is initialized on
   // all workers.  Also, only spawn threads on 1-n
   for(size_t i = 1; i < nthreads_; ++i) {
-    workers[i].spawn_work_loop(nthreads_, 1);
+    workers[i].spawn_work_loop(1);
   }
 
-  workers[0].run_work_loop(nthreads_, 1);
+  workers[0].run_work_loop(1);
 #endif
 }
 

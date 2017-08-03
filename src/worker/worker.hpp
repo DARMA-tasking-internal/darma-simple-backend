@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      flow.hpp
+//                      worker.hpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,60 +42,82 @@
 //@HEADER
 */
 
-#ifndef DARMASIMPLECVBACKEND_FLOW_HPP
-#define DARMASIMPLECVBACKEND_FLOW_HPP
+#ifndef DARMASIMPLECVBACKEND_WORKER_HPP
+#define DARMASIMPLECVBACKEND_WORKER_HPP
 
-#include <list>
+#include <thread>
+#include <cassert>
 
-#include "data_structures/trigger.hpp"
-#include "publish.hpp"
-#include "control_block.hpp"
-#include "task_collection_token.hpp"
+#include <darma/interface/backend/runtime.h>
+
+#include "data_structures/concurrent_list.hpp"
+#include "ready_task_holder.hpp"
+
+#ifndef SIMPLE_BACKEND_ENABLE_WORK_STEALING
+#  if !SIMPLE_BACKEND_DISABLE_WORK_STEALING
+#    define SIMPLE_BACKEND_ENABLE_WORK_STEALING 1
+#  else
+#    define SIMPLE_BACKEND_ENABLE_WORK_STEALING 0
+#  endif
+#endif
+
+#if SIMPLE_BACKEND_ENABLE_WORK_STEALING
+#  include <random>
+#endif
 
 namespace simple_backend {
 
-struct Flow {
-  Flow(std::shared_ptr<ControlBlock> cblk) : control_block(cblk), ready_trigger(0) { }
+struct Worker {
+  private:
 
-  Flow( std::shared_ptr<ControlBlock> cblk, size_t initial_count)
-    : control_block(cblk), ready_trigger(initial_count) { }
+#if !SIMPLE_BACKEND_USE_KOKKOS
+    std::unique_ptr<std::thread> thread_;
+#endif
 
-  CountdownTrigger<MultiActionList> ready_trigger;
+#if SIMPLE_BACKEND_ENABLE_WORK_STEALING
+    std::random_device work_stealing_random_device;
+    std::seed_seq work_stealing_seed_sequence;
+    std::mt19937 steal_generator;
+    std::uniform_int_distribution<> steal_distribution;
+#endif
 
-  std::shared_ptr<ControlBlock> control_block;
+    void setup_work_stealing();
 
-  // Alias shortcutting to avoid stack overflows (it's ugly for now, but at least
-  // it doesn't cause stack overflow)
-  std::atomic<bool> is_aliased = { false };
-  std::recursive_mutex alias_resolution_mutex;
-  std::list<std::shared_ptr<Flow>> aliased_to;
+    bool try_to_steal_work();
 
-  // Currently only used with commutative:
-  std::mutex commutative_mtx;
-  ResettableBooleanTrigger<MultiActionList> comm_in_flow_release_trigger;
+  public:
 
-  // Currently only for flow collections, and only valid after the task
-  // collection is registered and isn't read-only
-  std::shared_ptr<TaskCollectionToken> parent_collection_token = nullptr;
+    using task_unique_ptr = darma_runtime::abstract::backend::Runtime::task_unique_ptr;
+
+    ConcurrentDeque<ReadyTaskHolder> ready_tasks;
+
+    int id = -1;
+    int n_threads;
+
+    explicit
+    Worker(int id, int n_threads) : id(id), n_threads(n_threads) {
+      setup_work_stealing();
+    }
+
+    Worker(Worker&& other) noexcept;
+
+    Worker(Worker const&) = delete;
+    Worker& operator=(Worker const&) = delete;
+    Worker& operator=(Worker&&) = default;
+
+    void spawn_work_loop(int threads_per_partition);
+
+    void run_work_loop(int threads_per_partition);
+
+    void run_task(task_unique_ptr&& task);
+
+    void join();
+
+    ~Worker() = default;
 
 };
 
-struct AntiFlow {
-  AntiFlow() : ready_trigger(0) { }
-
-  AntiFlow(size_t initial_count) : ready_trigger(initial_count) { }
-
-  CountdownTrigger<MultiActionList> ready_trigger;
-
-  // Alias shortcutting to avoid stack overflows (it's ugly for now, but at least
-  // it doesn't cause stack overflow)
-  std::atomic<bool> is_aliased = { false };
-  std::mutex alias_resolution_mutex;
-  std::list<std::shared_ptr<AntiFlow>> aliased_to;
-
-  bool is_index_fetching_antiflow = false;
-};
 
 } // end namespace simple_backend
 
-#endif //DARMASIMPLECVBACKEND_FLOW_HPP
+#endif //DARMASIMPLECVBACKEND_WORKER_HPP

@@ -42,7 +42,7 @@
 //@HEADER
 */
 
-#include "runtime.hpp"
+#include "runtime/runtime.hpp"
 #include "debug.hpp"
 
 using namespace simple_backend;
@@ -108,11 +108,12 @@ Runtime::release_use(use_pending_release_t* use) {
       }
     });
 #elif ALIAS_HANDLING_METHOD == 2
-    auto& out_flow = use->get_out_flow();
-    out_flow->ready_trigger.increment_count();
-    use->get_in_flow()->ready_trigger.add_action([out_flow]{
-      out_flow->ready_trigger.decrement_count();
-    });
+    //auto& out_flow = use->get_out_flow();
+    //out_flow->ready_trigger.increment_count();
+    //use->get_in_flow()->ready_trigger.add_action([out_flow]{
+    //  out_flow->ready_trigger.decrement_count();
+    //});
+    use->get_in_flow()->alias_to(use->get_out_flow());
 #endif
 
     // Sometime a use can establish an alias but have an insignificant
@@ -169,11 +170,12 @@ Runtime::release_use(use_pending_release_t* use) {
         }
       });
 #elif ALIAS_HANDLING_METHOD == 2
-      auto& anti_in_flow = use->get_anti_in_flow();
-      anti_in_flow->ready_trigger.increment_count();
-      use->get_anti_out_flow()->ready_trigger.add_action([anti_in_flow]{
-        anti_in_flow->ready_trigger.decrement_count();
-      });
+      //auto& anti_in_flow = use->get_anti_in_flow();
+      //anti_in_flow->ready_trigger.increment_count();
+      //use->get_anti_out_flow()->ready_trigger.add_action([anti_in_flow]{
+      //  anti_in_flow->ready_trigger.decrement_count();
+      //});
+      use->get_anti_out_flow()->alias_to(use->get_anti_in_flow());
 #endif
 
     }
@@ -181,15 +183,15 @@ Runtime::release_use(use_pending_release_t* use) {
   }
 
   if(not use->is_anti_dependency() and use->get_anti_in_flow()) {
-    use->get_anti_in_flow()->ready_trigger.decrement_count();
+    use->get_anti_in_flow()->get_ready_trigger()->decrement_count();
   }
 
   if(use->get_out_flow()) {
-    use->get_out_flow()->ready_trigger.decrement_count();
+    use->get_out_flow()->get_ready_trigger()->decrement_count();
   }
 
   if(use->get_anti_out_flow()) {
-    use->get_anti_out_flow()->ready_trigger.decrement_count();
+    use->get_anti_out_flow()->get_ready_trigger()->decrement_count();
   }
 
   if(use->immediate_permissions() == use_t::Commutative) {

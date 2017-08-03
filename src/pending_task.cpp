@@ -42,7 +42,7 @@
 //@HEADER
 */
 
-#include "runtime.hpp"
+#include "runtime/runtime.hpp"
 #include "util.hpp"
 
 #include "debug.hpp"
@@ -173,7 +173,7 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
         commutative_locks_to_obtain.emplace_back(std::ref(dep->get_in_flow()->commutative_mtx));
         commutative_in_flows.emplace_back(dep->get_in_flow());
       }
-      dep->get_in_flow()->ready_trigger.add_action([this] {
+      dep->get_in_flow()->get_ready_trigger()->add_action([this] {
         trigger_.decrement_count();
       });
     }
@@ -184,7 +184,7 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
     // Antidependencies
     if(dep->is_anti_dependency()) {
       assert(dep->get_anti_in_flow());
-      dep->get_anti_in_flow()->ready_trigger.add_action([this] {
+      dep->get_anti_in_flow()->get_ready_trigger()->add_action([this] {
           trigger_.decrement_count();
         }
       );

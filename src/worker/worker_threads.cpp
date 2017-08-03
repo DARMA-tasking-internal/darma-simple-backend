@@ -2,9 +2,9 @@
 //@HEADER
 // ************************************************************************
 //
-//                        main.cpp
+//                      worker_threads.cpp
 //                         DARMA
-//              Copyright (C) 2016 Sandia Corporation
+//              Copyright (C) 2017 Sandia Corporation
 //
 // Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
@@ -36,76 +36,81 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact David S. Hollman (dshollm@sandia.gov)
+// Questions? Contact the DARMA developers (darma-admins@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
 */
 
-#if SIMPLE_BACKEND_USE_KOKKOS
-#include <Kokkos_Core.hpp>
-#endif
+#if !SIMPLE_BACKEND_USE_KOKKOS
 
-#include "runtime/runtime.hpp"
-#include "debug.hpp"
+#include "worker.hpp"
+#include <runtime/runtime.hpp>
 
-#if SIMPLE_BACKEND_DEBUG
+using namespace simple_backend;
 
-#include <signal.h>
-#include <csignal>
-#include <unistd.h>
+Worker::Worker(Worker&& other) noexcept
+  : ready_tasks(std::move(other.ready_tasks)),
+    id(other.id),
+    thread_(std::move(other.thread_)),
+    n_threads(other.n_threads)
+{ }
 
-std::unique_ptr<simple_backend::DebugWorker>
-simple_backend::DebugWorker::instance = std::make_unique<simple_backend::DebugWorker>();
+void Worker::spawn_work_loop(int threads_per_partition) {
 
-extern "C" {
-void sig_usr2_handler(int signal) {
-  simple_backend::DebugWorker::instance->empty_queue_actions.emplace_back(
-    ::simple_backend::make_debug_action_ptr([](auto& state){
-      ::simple_backend::DebugState::print_state(state);
-    })
-  );
-}
-} // end extern "C"
-#endif
-
-int main(int argc, char** argv) {
-
-#if SIMPLE_BACKEND_USE_KOKKOS
-  Kokkos::initialize(argc, argv);
-#endif
-
-#if SIMPLE_BACKEND_DEBUG
-
-  std::cout << "Running program with simple debug backend enabled.  Send signal SIGUSR2"
-    " to process " << std::to_string(getpid()) << " to introspect state." << std::endl;
-  std::signal(SIGUSR2, sig_usr2_handler);
-
-
-  simple_backend::DebugWorker::instance->spawn_work_loop();
-#endif
-
-  simple_backend::Runtime::initialize_top_level_instance(argc, argv);
-  simple_backend::Runtime::instance->spin_up_worker_threads();
-  simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
-
-#if SIMPLE_BACKEND_DEBUG
-  simple_backend::DebugWorker::instance->actions.emplace_back(nullptr);
-  simple_backend::DebugWorker::instance->worker_thread->join();
-#endif
-
-#if SIMPLE_BACKEND_USE_KOKKOS
-  Kokkos::finalize();
-#endif
+  thread_ = std::make_unique<std::thread>([this, threads_per_partition]{
+    run_work_loop(threads_per_partition);
+  });
 
 }
 
-namespace darma_runtime {
+void Worker::run_work_loop(int threads_per_partition) {
 
-void
-abort(std::string const& abort_str) {
-  std::cerr << "Aborting with message: " << abort_str << std::endl;
-  std::abort();
+  Runtime::this_worker_id = id;
+
+  // TODO reinstate tracking of "dorment" workers with Kokkow
+  // until we get a real task, we're considered "dorment"
+  ++Runtime::instance->dorment_workers;
+
+  while(true) {
+
+    auto ready = ready_tasks.get_and_pop_front();
+
+    // "Random" version:
+    //auto ready = steal_dis(steal_gen) % 2 == 0 ?
+    //  ready_tasks.get_and_pop_front() : ready_tasks.get_and_pop_back();
+
+    // If there are any tasks on the front of our queue, get them
+    if(ready) {
+      // pop_front was successful, run the task
+
+      // We're not dorment any more
+      --Runtime::instance->dorment_workers;
+
+      // if it's null, this is the signal to stop the workers
+      if(ready->task.get() == nullptr) {
+        // It's a special message; currently both mean "break", so do that.
+        break;
+      }
+      else {
+        run_task(std::move(ready->task));
+      }
+
+      ++Runtime::instance->dorment_workers;
+
+    } // end if any ready tasks exist
+    else {
+      try_to_steal_work();
+    }
+
+  } // end while true loop
+
 }
 
-} // end namespace darma_runtime
+void Worker::join() {
+  assert(thread_);
+  thread_->join();
+}
+
+
+#endif

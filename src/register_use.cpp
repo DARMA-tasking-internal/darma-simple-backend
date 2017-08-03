@@ -42,7 +42,7 @@
 //@HEADER
 */
 
-#include "runtime.hpp"
+#include "runtime/runtime.hpp"
 #include "debug.hpp"
 
 using namespace simple_backend;
@@ -99,7 +99,7 @@ Runtime::register_use(use_pending_registration_t* use) {
         std::make_shared<ControlBlock>(use->get_handle()),
         1 // start with a count so we can make it ready immediately
       );
-      in_flow->ready_trigger.decrement_count();
+      in_flow->get_ready_trigger()->decrement_count();
       break;
     }
     case FlowRelationship::InitialCollection : {
@@ -113,7 +113,7 @@ Runtime::register_use(use_pending_registration_t* use) {
         ),
         1 // start with a count so we can make it ready immediately
       );
-      in_flow->ready_trigger.decrement_count();
+      in_flow->get_ready_trigger()->decrement_count();
       break;
     }
     case FlowRelationship::IndexedLocal : {
@@ -129,8 +129,8 @@ Runtime::register_use(use_pending_registration_t* use) {
         ),
         1 // start with a count so that the collection flow can make it ready
       );
-      (*in_rel.related_flow())->ready_trigger.add_action([in_flow] {
-        in_flow->ready_trigger.decrement_count();
+      (*in_rel.related_flow())->get_ready_trigger()->add_action([in_flow] {
+        in_flow->get_ready_trigger()->decrement_count();
       });
       break;
     }
@@ -145,7 +145,7 @@ Runtime::register_use(use_pending_registration_t* use) {
 
       // Increment the ready trigger so that the release of the fetching trigger
       // can decrement it.
-      in_flow->ready_trigger.increment_count();
+      in_flow->get_ready_trigger()->increment_count();
       assert(in_rel.related_flow()->get()->parent_collection_token);
       in_rel.related_flow()->get()->parent_collection_token->current_published_entries.evaluate_at(
         std::make_tuple(
@@ -161,7 +161,7 @@ Runtime::register_use(use_pending_registration_t* use) {
           entry.entry->fetching_trigger.add_action([entry_entry=entry.entry, in_flow]{
             in_flow->control_block->data =
               (*entry_entry->source_flow)->control_block->data;
-            in_flow->ready_trigger.decrement_count();
+            in_flow->get_ready_trigger()->decrement_count();
           });
 
         }
@@ -224,7 +224,7 @@ Runtime::register_use(use_pending_registration_t* use) {
       // though the related anti-flow will not be ready (since it needs to be held
       // by the continuation for the purposes of the outer scope anti-dependency).
       // We should decrement the count here to make the new anti-flow ready now:
-      anti_in_flow->ready_trigger.decrement_count();
+      anti_in_flow->get_ready_trigger()->decrement_count();
       break;
     }
     case FlowRelationship::IndexedLocal : {
@@ -234,8 +234,8 @@ Runtime::register_use(use_pending_registration_t* use) {
         anti_in_flow = std::make_shared<AntiFlow>(
           1 // start with a count so that the collection flow can make it ready
         );
-        (*anti_in_rel.related_anti_flow())->ready_trigger.add_action([anti_in_flow] {
-          anti_in_flow->ready_trigger.decrement_count();
+        (*anti_in_rel.related_anti_flow())->get_ready_trigger()->add_action([anti_in_flow] {
+          anti_in_flow->get_ready_trigger()->decrement_count();
         });
       }
       break;
@@ -248,7 +248,7 @@ Runtime::register_use(use_pending_registration_t* use) {
 
   use->set_anti_in_flow(anti_in_flow);
   if(anti_in_flow and not use->is_anti_dependency()) {
-    anti_in_flow->ready_trigger.increment_count();
+    anti_in_flow->get_ready_trigger()->increment_count();
   }
 
   // </editor-fold> end in flow relationship }}}2
@@ -294,10 +294,10 @@ Runtime::register_use(use_pending_registration_t* use) {
       assert(out_related);
       // Indexed local out doesn't need a control block
       auto out_flow_related = *out_related;
-      out_flow_related->ready_trigger.increment_count();
+      out_flow_related->get_ready_trigger()->increment_count();
       out_flow = std::make_shared<Flow>(std::make_shared<ControlBlock>(nullptr));
-      out_flow->ready_trigger.add_action([out_flow_related]{
-        out_flow_related->ready_trigger.decrement_count();
+      out_flow->get_ready_trigger()->add_action([out_flow_related]{
+        out_flow_related->get_ready_trigger()->decrement_count();
       });
       break;
     }
@@ -309,7 +309,7 @@ Runtime::register_use(use_pending_registration_t* use) {
 
   if(out_flow) {
     // It's being used as an out, so make it not ready until this is released
-    out_flow->ready_trigger.increment_count();
+    out_flow->get_ready_trigger()->increment_count();
     use->set_out_flow(out_flow);
   }
 
@@ -360,10 +360,10 @@ Runtime::register_use(use_pending_registration_t* use) {
       assert(anti_out_related_anti_flow);
       assert(*anti_out_related_anti_flow);
       auto anti_out_flow_related = *anti_out_related_anti_flow;
-      anti_out_flow_related->ready_trigger.increment_count();
+      anti_out_flow_related->get_ready_trigger()->increment_count();
       anti_out_flow = std::make_shared<AntiFlow>();
-      anti_out_flow->ready_trigger.add_action([anti_out_flow_related] {
-        anti_out_flow_related->ready_trigger.decrement_count();
+      anti_out_flow->get_ready_trigger()->add_action([anti_out_flow_related] {
+        anti_out_flow_related->get_ready_trigger()->decrement_count();
       });
       break;
     }
@@ -383,7 +383,7 @@ Runtime::register_use(use_pending_registration_t* use) {
         ),
         [anti_out_flow](PublicationTableEntry& entry) {
           assert(entry.entry);
-          anti_out_flow->ready_trigger.add_action([entry_entry=entry.entry]{
+          anti_out_flow->get_ready_trigger()->add_action([entry_entry=entry.entry]{
             entry_entry->release_trigger.decrement_count();
           });
         }
@@ -398,7 +398,7 @@ Runtime::register_use(use_pending_registration_t* use) {
 
   if(anti_out_flow) {
     // It's being used as an out, so make it not ready until this is released
-    anti_out_flow->ready_trigger.increment_count();
+    anti_out_flow->get_ready_trigger()->increment_count();
     use->set_anti_out_flow(anti_out_flow);
   }
 

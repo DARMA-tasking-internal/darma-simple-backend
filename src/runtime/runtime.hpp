@@ -55,8 +55,8 @@
 
 #include "data_structures/concurrent_list.hpp"
 #include "data_structures/trigger.hpp"
-#include "worker.hpp"
-#include "flow.hpp"
+#include "worker/worker.hpp"
+#include "flow/flow.hpp"
 
 #include "parse_arguments.hpp"
 
@@ -204,22 +204,22 @@ class Runtime
     // </editor-fold> end all migration-related functions are implemented, but they just assert }}}2
     //--------------------------------------------------------------------------
 
-
     static std::unique_ptr<Runtime> instance;
     static thread_local darma_runtime::abstract::frontend::Task* running_task;
-    static thread_local std::size_t this_worker_id;
-    static thread_local std::size_t thread_stack_depth;
-#if SIMPLE_BACKEND_USE_FCONTEXT
-    static std::vector<boost::context::fcontext_t> darma_contexts;
-    static std::vector<boost::context::fcontext_t> kokkos_contexts;
-#endif
+    static thread_local int this_worker_id;
+    static thread_local int thread_stack_depth;
 
     CountdownTrigger<SingleAction> shutdown_trigger;
     std::atomic<size_t> dorment_workers = { 0 };
 
-#if SIMPLE_BACKEND_USE_KOKKOS
+    #if SIMPLE_BACKEND_USE_KOKKOS
     std::vector<ConcurrentDeque<ReadyTaskHolder>> ready_kokkos_tasks;
-#endif
+    #endif
+
+    #if SIMPLE_BACKEND_USE_FCONTEXT
+    static std::vector<boost::context::fcontext_t> darma_contexts;
+    static std::vector<boost::context::fcontext_t> kokkos_contexts;
+    #endif
 
     std::vector<Worker> workers;
 

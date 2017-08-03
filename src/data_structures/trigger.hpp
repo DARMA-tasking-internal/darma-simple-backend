@@ -59,6 +59,53 @@ struct TriggeredActionBase {
 };
 
 template <typename Callable>
+class SimpleAction
+  : public TriggeredActionBase
+{
+  private:
+    Callable callable_;
+
+  public:
+
+    explicit
+    SimpleAction(Callable&& callable)
+      : callable_(std::move(callable))
+    { }
+
+    void run() override {
+      callable_();
+    }
+
+};
+
+template <typename Callable>
+class SelfDeletingAction
+  : public TriggeredActionBase
+{
+  private:
+    Callable callable_;
+
+  public:
+
+    explicit
+    SelfDeletingAction(Callable&& callable)
+      : callable_(std::move(callable))
+    { }
+
+    void run() override {
+      callable_();
+      delete this;
+    }
+
+};
+
+template <typename Callable>
+inline auto
+make_new_self_deleting_action(Callable&& callable) {
+  return new SelfDeletingAction<std::decay_t<Callable>>(std::forward<Callable>(callable));
+}
+
+template <typename Callable>
 class TriggeredOnceAction
   : public TriggeredActionBase
 {

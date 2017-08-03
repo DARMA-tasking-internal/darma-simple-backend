@@ -38,6 +38,7 @@ include_directories(
 
 option(ENABLE_BACKEND_DEBUGGING "Whether to turn on debugging features for the backend itself" Off)
 
+option(BOOST_ROOT "Where to find boost (needed for lockfree queue)" "")
 option(BACKEND_USE_OPENMP "Whether or not to use OpenMP threads to back the simple backend" Off)
 option(BACKEND_USE_KOKKOS "Whether or not to use Kokkos to back the simple backend, enabling Kokkos compatibility" Off)
 option(BACKEND_USE_FCONTEXT "Whether or not to use fcontext to back the simple backend with Kokkos." Off)
@@ -46,6 +47,10 @@ option(FCONTEXT_ROOT "Path to fcontext (boost) installation (only used for BACKE
 
 if(ENABLE_BACKEND_DEBUGGING)
     add_definitions(-DSIMPLE_BACKEND_DEBUG)
+endif()
+
+if (DEFINED BOOST_ROOT)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${BOOST_ROOT}/include")
 endif()
 
 if(BACKEND_USE_OPENMP)

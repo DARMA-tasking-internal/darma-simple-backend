@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      worker.hpp
+//                      work_stealing_off.cpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -36,69 +36,19 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact David S. Hollman (dshollm@sandia.gov)
+// Questions? Contact the DARMA developers (darma-admins@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
 */
 
-#ifndef DARMASIMPLECVBACKEND_WORKER_HPP
-#define DARMASIMPLECVBACKEND_WORKER_HPP
 
-#include <thread>
-#include <cassert>
+#include "worker.hpp"
 
-#include <darma/interface/backend/runtime.h>
+using namespace simple_backend;
 
-#include "data_structures/concurrent_list.hpp"
-#include "ready_task_holder.hpp"
+#if !SIMPLE_BACKEND_ENABLE_WORK_STEALING
 
-namespace simple_backend {
+setup_work_stealing(size_t) { }
 
-
-struct Worker {
-  private:
-
-#if !defined(SIMPLE_BACKEND_USE_OPENMP)
-    std::unique_ptr<std::thread> thread_;
-#endif
-
-  public:
-
-    using task_unique_ptr = darma_runtime::abstract::backend::Runtime::task_unique_ptr;
-
-    ConcurrentDeque<ReadyTaskHolder> ready_tasks;
-
-    size_t id;
-
-    Worker(size_t id) : id(id) { }
-
-    Worker(Worker&& other)
-      :
-#if !defined(SIMPLE_BACKEND_USE_OPENMP)
-        thread_(std::move(other.thread_)),
-#endif
-        ready_tasks(std::move(other.ready_tasks)),
-        id(other.id)
-    { }
-
-
-    void spawn_work_loop(size_t n_threads_total, size_t threads_per_partition);
-
-    void run_work_loop(size_t n_threads_total, size_t threads_per_partition);
-
-    void run_task(task_unique_ptr&& task);
-
-    void join() {
-#if !defined(SIMPLE_BACKEND_USE_OPENMP) && !defined(SIMPLE_BACKEND_USE_KOKKOS)
-      assert(thread_);
-      thread_->join();
-#endif
-    }
-
-};
-
-
-} // end namespace simple_backend
-
-#endif //DARMASIMPLECVBACKEND_WORKER_HPP
+#endif // !SIMPLE_BACKEND_ENABLE_WORK_STEALING

@@ -46,19 +46,19 @@
 #  include <Kokkos_Core.hpp>
 #  if SIMPLE_BACKEND_USE_FCONTEXT
 #    include <boost/context/fcontext.hpp>
+#    define FCONTEXT_STACK_SIZE 8 * 1024 * 1024
 #  endif
 #endif
 
 #include <random>
 
-#include "runtime.hpp"
+#include "runtime/runtime.hpp"
 #include "worker.hpp"
 
 #include "debug.hpp"
 
 using namespace simple_backend;
 
-#define ENABLE_WORK_STEALING 1
 
 void Worker::run_task(Runtime::task_unique_ptr&& task) {
 
@@ -93,6 +93,7 @@ void Worker::run_task(Runtime::task_unique_ptr&& task) {
 
 }
 
+#if 0
 void Worker::run_work_loop(size_t n_threads_total, size_t threads_per_partition) {
 
   std::random_device rd;
@@ -253,15 +254,5 @@ void Worker::run_work_loop(size_t n_threads_total, size_t threads_per_partition)
   } // end while true loop
 
 }
-
-void Worker::spawn_work_loop(size_t n_threads_total, size_t threads_per_partition) {
-
-#if SIMPLE_BACKEND_USE_OPENMP
-  run_work_loop(n_threads_total, threads_per_partition);
-#else
-  thread_ = std::make_unique<std::thread>([this, n_threads_total, threads_per_partition]{
-    run_work_loop(n_threads_total, threads_per_partition);
-  });
 #endif
 
-}

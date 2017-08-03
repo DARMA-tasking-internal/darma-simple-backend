@@ -50,7 +50,7 @@
 #include <darma/interface/frontend/use.h>
 
 #include "data_structures/trigger.hpp"
-#include "control_block.hpp"
+#include "flow/control_block.hpp"
 
 namespace simple_backend {
 

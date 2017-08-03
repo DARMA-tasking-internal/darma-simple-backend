@@ -56,7 +56,7 @@
 
 #include <darma/interface/frontend/use.h>
 
-#include "flow.hpp"
+#include "flow/flow.hpp"
 #include "data_structures/concurrent_list.hpp"
 
 namespace simple_backend {
@@ -133,10 +133,10 @@ struct DebugState {
   ) {
     if(flow) {
       o << indent << "at: " << friendly_pointer_name(&(*flow));
-      auto ready = flow->ready_trigger.get_triggered();
+      auto ready = flow->get_ready_trigger()->get_triggered();
       o << " (ready: " << std::boolalpha << ready;
       if(not ready) {
-        o << ", ready trigger count: " << flow->ready_trigger.get_count();
+        o << ", ready trigger count: " << flow->get_ready_trigger()->get_count();
       }
       o << ")";
     }

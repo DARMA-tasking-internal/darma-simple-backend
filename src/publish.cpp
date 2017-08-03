@@ -44,7 +44,7 @@
 
 
 #include "publish.hpp"
-#include "runtime.hpp"
+#include "runtime/runtime.hpp"
 
 using namespace simple_backend;
 
@@ -90,20 +90,20 @@ Runtime::publish_use(
       );
 
       auto pub_use_ptr = pub_use.get();
-      pub_use_ptr->get_in_flow()->ready_trigger.add_action([
+      pub_use_ptr->get_in_flow()->get_ready_trigger()->add_action([
         this, entry, control_blk, pub_use=std::move(pub_use)
       ]{
         // The publish use itself holds the anti-out flow (and thus it's
         // not ready yet), so it's safe to make a copy here as long as we
         // do it before releasing the use
-        assert(not pub_use->get_anti_out_flow()->ready_trigger.get_triggered());
+        //assert(not pub_use->get_anti_out_flow()->get_ready_trigger().get_triggered());
 
         // Make a copy of the underlying data
         entry.entry->source_flow->get()->control_block = std::make_shared<ControlBlock>(
           ControlBlock::copy_underlying_data_tag_t{},
           control_blk
         ),
-        entry.entry->source_flow->get()->ready_trigger.decrement_count();
+        entry.entry->source_flow->get()->get_ready_trigger()->decrement_count();
 
         // The fetching trigger count starts at 1 so that it doesn't get triggered
         // while we're setting up the release; we can safely decrement it now

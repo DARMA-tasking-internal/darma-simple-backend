@@ -123,6 +123,93 @@ class ConcurrentDeque {
     }
 };
 
+
+
+// Taken from "Simple, fast, and practical non-blocking and blocking concurrent
+// queue algorithms" (doi: 10.1145/248052.248106)
+//template <typename T>
+//class MichaelScottQueue {
+//
+//  private:
+//
+//    struct pointer_t;
+//
+//    struct node_t {
+//      std::unique_ptr<T> value = nullptr;
+//      pointer_t next = nullptr;
+//    };
+//
+//    struct pointer_t {
+//      node_t* ptr = nullptr;
+//      size_t count = 0;
+//
+//      pointer_t() = default;
+//      pointer_t(nullptr_t) : ptr(nullptr), count(0) { }
+//      pointer_t(node_t* node) : ptr(node), count(0) { }
+//      pointer_t(pointer_t const& other) : ptr(other.ptr), count(other.count) { }
+//      pointer_t(node_t* node, size_t count)
+//        : ptr(node), count(count)
+//      { }
+//
+//
+//      bool operator==(pointer_t const& other) const {
+//        return other.ptr == ptr and other.count == count;
+//      }
+//    };
+//
+//    pointer_t head;
+//    pointer_t tail;
+//
+//  public:
+//
+//    MichaelScottQueue() {
+//      node_t* first_node = new node_t;
+//      head = tail = first_node;
+//    }
+//
+//    template <typename... Args>
+//    void emplace_back(
+//      Args&&... args
+//    ) {
+//      auto* to_enqueue = new node_t;
+//      to_enqueue->value = std::make_unique<T>(std::forward<Args>(args)...);
+//
+//      while(true) {
+//
+//        auto itail = tail;
+//        auto next = itail.ptr->next;
+//        if(itail == tail) {
+//
+//          if(next.ptr == nullptr) {
+//
+//            if(std::atomic_compare_exchange_strong(
+//              &tail.ptr->next, next, pointer_t(to_enqueue, next.count+1)
+//            )) {
+//              break;
+//            } // end if CAS successful
+//
+//          } // end if next.pointer == null
+//          else {
+//
+//            // Try to swap tail to be the next node
+//            std::atomic_compare_exchange_strong(
+//              &tail, itail, pointer_t(next.ptr, itail.count+1)
+//            );
+//
+//          } // end if tail is pointing to the last node
+//
+//        } // end if itail and next are in a consistent state
+//
+//      } // end loop until successful CAS
+//
+//
+//
+//    }
+//
+//
+//};
+
+
 } // end namespace simple_backend
 
 #endif //DARMASIMPLECVBACKEND_CONCURRENT_LIST_HPP
