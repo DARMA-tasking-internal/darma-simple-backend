@@ -108,6 +108,7 @@ install (EXPORT DarmaSimpleBackendDepends DESTINATION cmake COMPONENT dev)
 
 if(BACKEND_USE_KOKKOS)
     if(BACKEND_USE_FCONTEXT)
+        message(STATUS "Will link to fcontext library at ${FCONTEXT_ROOT}/lib")
         set_target_properties(darma_simple_backend PROPERTIES 
             LINK_FLAGS "${KOKKOS_LIBS} ${KOKKOS_LDFLAGS} -L${FCONTEXT_ROOT}/lib -lboost_context"
         )

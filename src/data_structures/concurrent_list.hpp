@@ -48,6 +48,7 @@
 #include <mutex>
 #include <deque>
 #include <list>
+#include <memory>
 
 namespace simple_backend {
 

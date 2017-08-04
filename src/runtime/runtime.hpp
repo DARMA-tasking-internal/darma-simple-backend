@@ -60,6 +60,9 @@
 
 #include "parse_arguments.hpp"
 
+// TODO this should be included by just including <darma.h> in the future (or there should be a shorter version that can be included...)
+#include <darma/impl/serialization/allocator.impl.h>
+
 namespace simple_backend {
 
 
