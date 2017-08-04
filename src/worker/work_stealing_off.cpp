@@ -49,6 +49,8 @@ using namespace simple_backend;
 
 #if !SIMPLE_BACKEND_ENABLE_WORK_STEALING
 
-setup_work_stealing(size_t) { }
+void Worker::setup_work_stealing() { }
+
+bool Worker::try_to_steal_work() { return false; }
 
 #endif // !SIMPLE_BACKEND_ENABLE_WORK_STEALING
