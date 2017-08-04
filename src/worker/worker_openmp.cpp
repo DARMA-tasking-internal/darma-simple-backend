@@ -60,14 +60,16 @@ Runtime::spin_up_worker_threads()
 
   Kokkos::OpenMP::partition_master([&](int partition_id, int n_partitions) {
     while(not Runtime::instance->shutdown_trigger.get_triggered()) {
-      //#pragma omp parallel num_threads(nthreads_ / n_kokkos_partitions)
-      Kokkos::parallel_for(threads_per_partition, [=](int i){
+      #pragma omp parallel num_threads(nthreads_ / n_kokkos_partitions)
+      {
+      //Kokkos::parallel_for(threads_per_partition, [=](int i){
 
         workers[
-          partition_id * threads_per_partition + i // omp_get_thread_num()
+          partition_id * threads_per_partition + omp_get_thread_num()
         ].run_work_loop(threads_per_partition);
 
-      }); // end partition parallel
+      //}); // end partition parallel
+      } // end partition parallel
 
       if (Runtime::instance->shutdown_trigger.get_triggered()) {
         break;
