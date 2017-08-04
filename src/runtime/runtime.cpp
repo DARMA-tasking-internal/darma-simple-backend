@@ -230,6 +230,8 @@ void darma_scheduler_context(intptr_t arg) {
 }
 #endif
 
+// TODO move this to the worker_*.cpp files for all the rest of the cases
+#if !SIMPLE_BACKEND_USE_KOKKOS || SIMPLE_BACKEND_USE_FCONTEXT
 void
 Runtime::spin_up_worker_threads()
 {
@@ -242,8 +244,10 @@ Runtime::spin_up_worker_threads()
 #elif SIMPLE_BACKEND_USE_KOKKOS
   const int threads_per_partition = nthreads_ / n_kokkos_partitions;
   Runtime::instance->ready_kokkos_tasks.resize(n_kokkos_partitions);
+#if SIMPLE_BACKEND_USE_FCONTEXT
   Runtime::kokkos_contexts.resize(nthreads_);
   Runtime::darma_contexts.resize(nthreads_);
+#endif
 
   Kokkos::OpenMP::partition_master([&](int partition_id, int n_partitions) {
 #if SIMPLE_BACKEND_USE_FCONTEXT
@@ -305,9 +309,11 @@ Runtime::spin_up_worker_threads()
 #endif
     }
 
+#if SIMPLE_BACKEND_USE_FCONTEXT
     for(auto* part_stack : partition_stacks) {
       std::free(part_stack);
     }
+#endif
 
   }, n_kokkos_partitions, nthreads_ / n_kokkos_partitions);
 #else
@@ -320,6 +326,7 @@ Runtime::spin_up_worker_threads()
   workers[0].run_work_loop(1);
 #endif
 }
+#endif
 
 
 
