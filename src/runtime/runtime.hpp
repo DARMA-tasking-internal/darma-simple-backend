@@ -216,7 +216,7 @@ class Runtime
     std::atomic<size_t> dorment_workers = { 0 };
 
     #if SIMPLE_BACKEND_USE_KOKKOS
-    std::vector<ConcurrentDeque<ReadyTaskHolder>> ready_kokkos_tasks;
+    std::vector<std::unique_ptr<boost::lockfree::queue<ReadyTaskHolder*>>> ready_kokkos_tasks;
     #endif
 
     #if SIMPLE_BACKEND_USE_FCONTEXT

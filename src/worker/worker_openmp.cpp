@@ -56,7 +56,13 @@ Runtime::spin_up_worker_threads()
 {
   const int threads_per_partition = nthreads_ / n_kokkos_partitions;
 
-  Runtime::instance->ready_kokkos_tasks.resize(n_kokkos_partitions);
+  Runtime::instance->ready_kokkos_tasks.reserve(n_kokkos_partitions);
+  for(int i = 0; i < n_kokkos_partitions; ++i) {
+    // Reserve 10 tasks in the free list for now
+    Runtime::instance->ready_kokkos_tasks.emplace_back(
+      std::make_unique<boost::lockfree::queue<ReadyTaskHolder*>>(10)
+    );
+  }
 
   Kokkos::OpenMP::partition_master([&](int partition_id, int n_partitions) {
     while(not Runtime::instance->shutdown_trigger.get_triggered()) {
@@ -74,13 +80,13 @@ Runtime::spin_up_worker_threads()
       } else {
         assert(Kokkos::Impl::t_openmp_instance);
         // Exited to run a Kokkos task, so run it
-        auto ktask =
-          Runtime::instance->ready_kokkos_tasks[partition_id].get_and_pop_front();
-        assert(Kokkos::Impl::t_openmp_instance);
-        assert(ktask);
-        assert(ktask->task->is_data_parallel_task());
-        workers[partition_id
-          * threads_per_partition].run_task(std::move(ktask->task));
+        Runtime::instance->ready_kokkos_tasks[partition_id]->consume_all(
+          [&](ReadyTaskHolder* ktask) {
+            workers[partition_id
+              * threads_per_partition].run_task(std::move(ktask->task));
+            delete ktask;
+          }
+        );
 
       }
     }
@@ -132,8 +138,8 @@ void Worker::run_work_loop(int threads_per_partition) {
       else if(ready->task->is_data_parallel_task()) {
         size_t partition = id / threads_per_partition;
         size_t master = partition * threads_per_partition;
-        Runtime::instance->ready_kokkos_tasks[partition].emplace_back(
-          std::move(*ready)
+        Runtime::instance->ready_kokkos_tasks[partition]->push(
+          ready.release()
         );
 
         // tell everyone in my partition to break
