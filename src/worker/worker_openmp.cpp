@@ -117,10 +117,6 @@ void Worker::run_work_loop(int threads_per_partition) {
 
   Runtime::this_worker_id = id;
 
-  // TODO reinstate tracking of "dorment" workers with Kokkow
-  // until we get a real task, we're considered "dorment"
-  ++Runtime::instance->dorment_workers;
-
   while(true) {
 
     auto ready = ready_tasks.get_and_pop_front();
@@ -128,9 +124,6 @@ void Worker::run_work_loop(int threads_per_partition) {
     // If there are any tasks on the front of our queue, get them
     if(ready) {
       // pop_front was successful, run the task
-
-      // We're not dorment any more
-      --Runtime::instance->dorment_workers;
 
       // if it's null, this is the signal to stop the workers
       if(ready->task.get() == nullptr) {
@@ -159,8 +152,6 @@ void Worker::run_work_loop(int threads_per_partition) {
       else {
         run_task(std::move(ready->task));
       }
-
-      ++Runtime::instance->dorment_workers;
 
     } // end if any ready tasks exist
     else {
