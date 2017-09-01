@@ -46,6 +46,7 @@
 
 #include "worker.hpp"
 #include <runtime/runtime.hpp>
+#include "ready_operation.hpp"
 
 using namespace simple_backend;
 
@@ -72,31 +73,29 @@ void Worker::run_work_loop(int threads_per_partition) {
   // until we get a real task, we're considered "dorment"
   ++Runtime::instance->dorment_workers;
 
+  ready_operation_ptr ready_op = nullptr;
+
   while(true) {
 
-    auto ready = ready_tasks.get_and_pop_front();
+    bool has_ready_op = ready_tasks.pop(ready_op);
 
     // "Random" version:
     //auto ready = steal_dis(steal_gen) % 2 == 0 ?
     //  ready_tasks.get_and_pop_front() : ready_tasks.get_and_pop_back();
 
     // If there are any tasks on the front of our queue, get them
-    if(ready) {
+    if(has_ready_op) {
       // pop_front was successful, run the task
 
       // We're not dorment any more
       --Runtime::instance->dorment_workers;
 
-      // if it's null, this is the signal to stop the workers
-      if(ready->task.get() == nullptr) {
-        // It's a special message; currently both mean "break", so do that.
-        break;
-      }
-      else {
-        run_task(std::move(ready->task));
-      }
+      bool should_break = run_operation(ready_op);
 
+      // We're dorment again
       ++Runtime::instance->dorment_workers;
+
+      if(should_break) break;
 
     } // end if any ready tasks exist
     else {

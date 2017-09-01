@@ -105,7 +105,7 @@ make_new_self_deleting_action(Callable&& callable) {
   return new SelfDeletingAction<std::decay_t<Callable>>(std::forward<Callable>(callable));
 }
 
-template <typename Callable>
+template <typename Callable, typename... Args>
 class TriggeredOnceAction
   : public TriggeredActionBase
 {
@@ -113,13 +113,26 @@ class TriggeredOnceAction
 
     std::atomic_flag triggered_ = ATOMIC_FLAG_INIT;
     Callable callable_;
+    std::tuple<Args...> args_;
+
+    template <size_t... Idxs>
+    void _run_impl(
+      std::integer_sequence<size_t, Idxs...> /*unused*/
+    ) {
+      callable_(std::get<Idxs>(std::move(args_))...);
+    }
 
   public:
 
+    template <typename... ArgsDeduced>
     explicit
-    TriggeredOnceAction(Callable&& callable)
-      : callable_(std::move(callable))
+    TriggeredOnceAction(
+      Callable&& callable,
+      ArgsDeduced&&... args
+    ) : callable_(std::move(callable)),
+        args_(std::make_tuple(std::forward<ArgsDeduced>(args)...))
     { }
+
 
     void run() override {
       // TODO memory order
@@ -260,15 +273,15 @@ class CountdownTrigger {
       : count_(initial_count)
     { }
 
-    template <typename Callable>
-    void add_action(Callable&& callable) {
+    template <typename Callable, typename... Args>
+    void add_action(Callable&& callable, Args&&... args) {
       if(triggered_.load()) {
         callable();
       }
       else {
         actions_.add_action(std::make_unique<
-          TriggeredOnceAction<std::decay_t<Callable>>
-        >(std::forward<Callable>(callable)));
+          TriggeredOnceAction<std::decay_t<Callable>, std::decay_t<Args>...>
+        >(std::forward<Callable>(callable), std::forward<Args>(args)...));
         // If the ready_trigger happened while we were adding the callable, we
         // need to do the actions now (which might include this action)
         // since the whole queue of actions could have completed between
@@ -279,18 +292,19 @@ class CountdownTrigger {
 
     // Add the first action if the ready_trigger hasn't fired yet,
     // do the second action if it has
-    template <typename CallableToAdd, typename CallableToDo>
+    template <typename CallableToAdd, typename CallableToDo, typename... Args>
     void add_or_do_action(
       CallableToAdd&& callable_to_add,
-      CallableToDo&& callable_to_do
+      CallableToDo&& callable_to_do,
+      Args&&... args
     ) {
       if(triggered_.load()) {
-        callable_to_do();
+        callable_to_do(std::forward<Args>(args)...);
       }
       else {
         actions_.add_action(std::make_unique<
-          TriggeredOnceAction<std::decay_t<CallableToAdd>>
-        >(std::forward<CallableToAdd>(callable_to_add)));
+          TriggeredOnceAction<std::decay_t<CallableToAdd>, std::decay_t<Args>...>
+        >(std::forward<CallableToAdd>(callable_to_add), std::forward<Args>(args)...));
         // If the ready_trigger happened while we were adding the callable, we
         // need to do the actions now (which might include this action)
         // since the whole queue of actions could have completed between
@@ -438,6 +452,14 @@ class ResettableBooleanTrigger {
     }
 
 };
+
+class JoinCounter {
+  private:
+
+
+};
+
+
 
 } // end namespace simple_backend
 

@@ -55,6 +55,7 @@
 #include <memory>
 
 #include <darma/interface/frontend/use.h>
+#include <darma/impl/config.h>
 
 #include "flow/flow.hpp"
 #include "data_structures/concurrent_list.hpp"
@@ -190,7 +191,13 @@ struct DebugState {
     }
     else { o << " (unnamed), "; }
     o << "(address: " << friendly_pointer_name(task) << ")";
-    o << " with dependencies:" << std::endl;
+#if DARMA_CREATE_WORK_RECORD_LINE_NUMBERS
+    o << std::dec << std::endl << indent << "  created at: "
+      << task->get_calling_filename()
+      << ":" << task->get_calling_line_number() << std::endl;
+    o << indent << "  (created in function: " << task->get_calling_function_name() << ")" << std::endl;
+#endif
+    o << indent << "with dependencies:" << std::endl;
     // Technically not allowed after run is called (I think), so we should
     // probably do something different here for running tasks
     for(auto* dep : task->get_dependencies()) {

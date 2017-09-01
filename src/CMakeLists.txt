@@ -42,7 +42,7 @@ set(headers
     ${worker_headers_GLOB}
     ${runtime_headers_GLOB}
     ${flow_headers_GLOB}
-)
+        data_structures/data_structures_fwd.hpp pending_operation.hpp ready_operation.hpp ready_operation.cpp)
 add_library(darma_simple_backend SHARED ${sources} ${headers})
 set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD 14)
 set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD_REQUIRED ON)

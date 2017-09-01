@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      release_use.cpp
+//                      data_structures_fwd.hpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,41 +42,31 @@
 //@HEADER
 */
 
-#include "runtime/runtime.hpp"
-#include "debug.hpp"
+#ifndef DARMASIMPLEBACKEND_DATA_STRUCTURES_FWD_HPP
+#define DARMASIMPLEBACKEND_DATA_STRUCTURES_FWD_HPP
 
-#include <flow/aliasing_strategy.hpp>
+#include <mutex>
 
-using namespace simple_backend;
+namespace simple_backend {
+namespace data_structures {
 
-#define ALIAS_HANDLING_METHOD 2
+/** @brief CRTP base for thread safe queue implementations
+ *
+ */
+template <typename ConcreteT>
+class ThreadSafeQueue;
 
-//==============================================================================
+/** @brief A "simplest possible" thread-safe queue that uses one lock.
+ *
+ */
+template <
+  typename T,
+  typename Mutex=std::mutex,
+  typename Allocator=std::allocator<T>
+>
+class SingleLockThreadSafeQueue;
 
-void
-Runtime::release_use(use_pending_release_t* use) {
+} // end namespace data_structures
+} // end namespace simple_backend
 
-  _SIMPLE_DBG_DO([use](auto& state) { state.remove_registered_use(use); });
-
-  if(use->establishes_alias()) {
-    aliasing_strategy_.handle_aliasing_for_released_use(use);
-  }
-
-  if(not use->is_anti_dependency() and use->get_anti_in_flow()) {
-    use->get_anti_in_flow()->get_ready_trigger()->decrement_count();
-  }
-
-  if(use->get_out_flow()) {
-    use->get_out_flow()->get_ready_trigger()->decrement_count();
-  }
-
-  if(use->get_anti_out_flow()) {
-    use->get_anti_out_flow()->get_ready_trigger()->decrement_count();
-  }
-
-  if(use->immediate_permissions() == use_t::Commutative) {
-    use->get_in_flow()->comm_in_flow_release_trigger.activate();
-  }
-
-}
-
+#endif //DARMASIMPLEBACKEND_DATA_STRUCTURES_FWD_HPP

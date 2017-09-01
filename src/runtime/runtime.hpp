@@ -55,13 +55,15 @@
 
 #include "data_structures/concurrent_list.hpp"
 #include "data_structures/trigger.hpp"
-#include "worker/worker.hpp"
-#include "flow/flow.hpp"
+#include <worker/worker.hpp>
+#include <flow/flow.hpp>
+#include <flow/aliasing_strategy.hpp>
 
 #include "parse_arguments.hpp"
 
 // TODO this should be included by just including <darma.h> in the future (or there should be a shorter version that can be included...)
 #include <darma/impl/serialization/allocator.impl.h>
+#include <config.hpp>
 
 namespace simple_backend {
 
@@ -100,9 +102,8 @@ class Runtime
 #endif
 
     size_t lookahead_;
-    // TODO expose this as a command line option
-    size_t max_task_depth_ = 10;
-    std::atomic<size_t> pending_tasks_ = { 0 };
+
+    types::aliasing_strategy_t aliasing_strategy_;
 
   public:
 
@@ -169,7 +170,7 @@ class Runtime
     //--------------------------------------------------------------------------
     // <editor-fold desc="all migration-related functions are implemented, but they just assert"> {{{2
 
-    virtual void
+    void
     reregister_migrated_use(
       darma_runtime::abstract::frontend::RegisteredUse* u
     ) override
@@ -177,7 +178,7 @@ class Runtime
       assert(false); // No migration calls should ever be made.
     }
 
-    virtual size_t
+    size_t
     get_packed_flow_size(
       darma_runtime::types::flow_t const& f
     ) override
@@ -186,7 +187,7 @@ class Runtime
       return 0;
     }
 
-    virtual void
+    void
     pack_flow(
       darma_runtime::types::flow_t& f,
       void*& buffer
@@ -195,7 +196,7 @@ class Runtime
       assert(false); // No migration calls should ever be made.
     }
 
-    virtual darma_runtime::types::flow_t
+    darma_runtime::types::flow_t
     make_unpacked_flow(
       void const*& buffer
     ) override
@@ -204,6 +205,32 @@ class Runtime
       return {};
     }
 
+    size_t
+    get_packed_anti_flow_size(
+      darma_runtime::types::anti_flow_t const& f
+    ) override
+    {
+      assert(false); // No migration calls should ever be made.
+      return 0;
+    }
+
+    void
+    pack_anti_flow(
+      darma_runtime::types::anti_flow_t& f,
+      void*& buffer
+    ) override
+    {
+      assert(false); // No migration calls should ever be made.
+    }
+
+    darma_runtime::types::anti_flow_t
+    make_unpacked_anti_flow(
+      void const*& buffer
+    ) override
+    {
+      assert(false);
+      return {};
+    }
     // </editor-fold> end all migration-related functions are implemented, but they just assert }}}2
     //--------------------------------------------------------------------------
 
@@ -211,12 +238,15 @@ class Runtime
     static thread_local darma_runtime::abstract::frontend::Task* running_task;
     static thread_local int this_worker_id;
     static thread_local int thread_stack_depth;
+    // TODO expose this as a command line option
+    size_t max_task_depth = 100;
+    std::atomic<size_t> pending_tasks = { 0 };
 
     CountdownTrigger<SingleAction> shutdown_trigger;
     std::atomic<size_t> dorment_workers = { 0 };
 
     #if SIMPLE_BACKEND_USE_KOKKOS
-    std::vector<std::unique_ptr<boost::lockfree::queue<ReadyTaskHolder*>>> ready_kokkos_tasks;
+    std::vector<std::unique_ptr<types::thread_safe_queue_t<ReadyOperation*>>> ready_kokkos_tasks;
     #endif
 
     #if SIMPLE_BACKEND_USE_FCONTEXT

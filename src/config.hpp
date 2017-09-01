@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      release_use.cpp
+//                      config.hpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,41 +42,33 @@
 //@HEADER
 */
 
-#include "runtime/runtime.hpp"
-#include "debug.hpp"
+#ifndef DARMASIMPLEBACKEND_CONFIG_HPP
+#define DARMASIMPLEBACKEND_CONFIG_HPP
 
-#include <flow/aliasing_strategy.hpp>
+#include <data_structures/queue.hpp>
+#include "flow/aliasing_strategy_fwd.hpp"
 
-using namespace simple_backend;
+#define SIMPLE_BACKEND_DISABLE_WORK_STEALING 1
 
-#define ALIAS_HANDLING_METHOD 2
+#ifndef SIMPLE_BACKEND_ENABLE_WORK_STEALING
+#  if !SIMPLE_BACKEND_DISABLE_WORK_STEALING
+#    define SIMPLE_BACKEND_ENABLE_WORK_STEALING 1
+#  else
+#    define SIMPLE_BACKEND_ENABLE_WORK_STEALING 0
+#  endif
+#endif
 
-//==============================================================================
+namespace simple_backend {
 
-void
-Runtime::release_use(use_pending_release_t* use) {
+namespace types {
 
-  _SIMPLE_DBG_DO([use](auto& state) { state.remove_registered_use(use); });
+using aliasing_strategy_t = aliasing::ActionListAppendAliasingStrategy;
 
-  if(use->establishes_alias()) {
-    aliasing_strategy_.handle_aliasing_for_released_use(use);
-  }
+template <typename... Args>
+using thread_safe_queue_t = data_structures::SingleLockThreadSafeQueue<Args...>;
 
-  if(not use->is_anti_dependency() and use->get_anti_in_flow()) {
-    use->get_anti_in_flow()->get_ready_trigger()->decrement_count();
-  }
+} // end namespace types
 
-  if(use->get_out_flow()) {
-    use->get_out_flow()->get_ready_trigger()->decrement_count();
-  }
+} // end namespace simple_backend
 
-  if(use->get_anti_out_flow()) {
-    use->get_anti_out_flow()->get_ready_trigger()->decrement_count();
-  }
-
-  if(use->immediate_permissions() == use_t::Commutative) {
-    use->get_in_flow()->comm_in_flow_release_trigger.activate();
-  }
-
-}
-
+#endif //DARMASIMPLEBACKEND_CONFIG_HPP

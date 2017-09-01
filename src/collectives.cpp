@@ -424,6 +424,7 @@ Runtime::allreduce_use(
 //          delete[] packed_data;
 //        });
 //      });
+      assert(false);
 
       // Add the decrement of the invocation ready trigger to the ready trigger
       // of the anti-in flow

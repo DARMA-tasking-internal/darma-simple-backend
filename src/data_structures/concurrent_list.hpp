@@ -52,6 +52,7 @@
 
 namespace simple_backend {
 
+
 // A simple, stand-in concurrent list implementation, for now
 template <typename T>
 class ConcurrentDeque {

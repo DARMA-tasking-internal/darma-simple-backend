@@ -50,16 +50,11 @@
 
 #include <darma/interface/backend/runtime.h>
 
+#include "config.hpp"
+
 #include "data_structures/concurrent_list.hpp"
 #include "ready_task_holder.hpp"
 
-#ifndef SIMPLE_BACKEND_ENABLE_WORK_STEALING
-#  if !SIMPLE_BACKEND_DISABLE_WORK_STEALING
-#    define SIMPLE_BACKEND_ENABLE_WORK_STEALING 1
-#  else
-#    define SIMPLE_BACKEND_ENABLE_WORK_STEALING 0
-#  endif
-#endif
 
 #if SIMPLE_BACKEND_ENABLE_WORK_STEALING
 #  include <random>
@@ -88,8 +83,9 @@ struct Worker {
   public:
 
     using task_unique_ptr = darma_runtime::abstract::backend::Runtime::task_unique_ptr;
+    using ready_operation_ptr = std::unique_ptr<ReadyOperation>;
 
-    ConcurrentDeque<ReadyTaskHolder> ready_tasks;
+    types::thread_safe_queue_t<ready_operation_ptr> ready_tasks;
 
     int id = -1;
     int n_threads;
@@ -108,6 +104,29 @@ struct Worker {
     void spawn_work_loop(int threads_per_partition);
 
     void run_work_loop(int threads_per_partition);
+
+    template <typename ReadyOperationPtr>
+    bool run_operation(ReadyOperationPtr const& ready_op) {
+      if(ready_op->is_runnable()) {
+        ready_op->run();
+        return false;
+      }
+      else {
+
+        auto msg_kind = ready_op->get_message_kind();
+
+        switch(msg_kind) {
+          case ReadyOperation::MessageKind::AllTasksDone: {
+            return true;
+          }
+          default: {
+            assert(false); // should be unreachable
+          }
+        }
+
+      }
+
+    }
 
     void run_task(task_unique_ptr&& task);
 

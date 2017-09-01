@@ -48,12 +48,13 @@
 #include <unordered_map>
 #include <mutex>
 
+#include <darma.h>
+
 #include "data_structures/concurrent_map.hpp"
 
 #include "simple_backend_fwd.hpp"
 #include "data_structures/trigger.hpp"
 
-#include <darma/impl/key/SSO_key.h>
 
 namespace std {
 

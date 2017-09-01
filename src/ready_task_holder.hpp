@@ -49,28 +49,6 @@
 
 namespace simple_backend {
 
-struct ReadyTaskHolder {
-  using task_unique_ptr = darma_runtime::abstract::backend::Runtime::task_unique_ptr;
-
-
-  typedef enum special_message {
-    NoMessage,
-    AllTasksDone
-#if SIMPLE_BACKEND_USE_KOKKOS
-    , NeededForKokkosWork
-#endif
-  } special_message_t;
-
-  task_unique_ptr task = nullptr;
-
-  special_message_t message = NoMessage;
-
-  ReadyTaskHolder(task_unique_ptr&& in_task) : task(std::move(in_task)) { }
-
-  ReadyTaskHolder(special_message_t in_message) : task(nullptr), message(in_message) { }
-
-};
-
 } // end namespace simple_backend
 
 #endif //DARMASIMPLEBACKEND_READY_TASK_HOLDER_HPP

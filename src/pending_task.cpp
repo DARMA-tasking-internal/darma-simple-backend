@@ -216,7 +216,7 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
         // If all of the dependencies and antidependencies aren't ready, place it on
         // the queue when it becomes ready
         [this, worker_id] {
-          Runtime::instance->workers[worker_id].ready_tasks.emplace_front(std::move(task_));
+          Runtime::instance->workers[worker_id].ready_tasks.emplace_back(std::move(task_));
           delete this;
         },
         // Otherwise, just run it in place
@@ -233,7 +233,7 @@ void Runtime::PendingTaskHolder::enqueue_or_run(
         // If all of the dependencies and antidependencies aren't ready, place it on
         // the queue when it becomes ready
         [this, worker_id] {
-          Runtime::instance->workers[worker_id].ready_tasks.emplace_front(std::move(task_));
+          Runtime::instance->workers[worker_id].ready_tasks.emplace_back(std::move(task_));
           delete this;
         }
       );

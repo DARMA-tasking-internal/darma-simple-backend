@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      release_use.cpp
+//                      ready_operation.cpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,41 +42,43 @@
 //@HEADER
 */
 
-#include "runtime/runtime.hpp"
+#include <darma.h>
+#include <runtime/runtime.hpp>
+#include "ready_operation.hpp"
 #include "debug.hpp"
-
-#include <flow/aliasing_strategy.hpp>
 
 using namespace simple_backend;
 
-#define ALIAS_HANDLING_METHOD 2
-
-//==============================================================================
-
 void
-Runtime::release_use(use_pending_release_t* use) {
+ReadyTaskOperation::run()
+{
+  _SIMPLE_DBG_DO([&](auto& state){
+    state.running_tasks.insert(task_.get());
+    state.pending_tasks.erase(task_.get());
+  });
 
-  _SIMPLE_DBG_DO([use](auto& state) { state.remove_registered_use(use); });
-
-  if(use->establishes_alias()) {
-    aliasing_strategy_.handle_aliasing_for_released_use(use);
+  // setup data
+  for(auto&& dep : task_->get_dependencies()) {
+    if(dep->immediate_permissions() != Runtime::use_t::None) {
+      dep->get_data_pointer_reference() = dep->get_in_flow()->control_block->data;
+    }
   }
+  // set the running task
+  auto* old_running_task = Runtime::running_task;
+  Runtime::running_task = task_.get();
 
-  if(not use->is_anti_dependency() and use->get_anti_in_flow()) {
-    use->get_anti_in_flow()->get_ready_trigger()->decrement_count();
-  }
+  task_->run();
 
-  if(use->get_out_flow()) {
-    use->get_out_flow()->get_ready_trigger()->decrement_count();
-  }
+  _SIMPLE_DBG_DO([&](auto& state){
+    state.running_tasks.erase(task_.get());
+  });
 
-  if(use->get_anti_out_flow()) {
-    use->get_anti_out_flow()->get_ready_trigger()->decrement_count();
-  }
+  // Delete the task object
+  task_ = nullptr;
 
-  if(use->immediate_permissions() == use_t::Commutative) {
-    use->get_in_flow()->comm_in_flow_release_trigger.activate();
-  }
+  // Reset the running task ptr
+  Runtime::running_task = old_running_task;
+
+  Runtime::instance->shutdown_trigger.decrement_count();
 
 }
-

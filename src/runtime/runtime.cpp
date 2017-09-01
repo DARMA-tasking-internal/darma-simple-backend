@@ -151,8 +151,8 @@ Runtime::register_task(task_unique_ptr&& task) {
   holder->enqueue_or_run(
     // only run on the stack if the number of pending tasks is greater than
     // or equal to the lookahead
-    pending_tasks_.load() >= lookahead_
-    and thread_stack_depth < max_task_depth_
+    pending_tasks.load() >= lookahead_
+    and thread_stack_depth < max_task_depth
   );
 }
 

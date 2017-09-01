@@ -54,6 +54,8 @@ struct TaskCollectionToken;
 
 struct CollectionControlBlock;
 
+struct ReadyOperation;
+
 } // end namespace simple_backend
 
 #endif //DARMASIMPLECVBACKEND_SIMPLE_BACKEND_FWD_HPP

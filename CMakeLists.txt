@@ -49,8 +49,12 @@ if(ENABLE_BACKEND_DEBUGGING)
     add_definitions(-DSIMPLE_BACKEND_DEBUG)
 endif()
 
-if (DEFINED BOOST_ROOT)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${BOOST_ROOT}/include")
+if (BOOST_ROOT)
+    #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${BOOST_ROOT}/include")
+    include_directories(${BOOST_ROOT}/include)
+else()
+    # use the one included here:
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/external/include)
 endif()
 
 if(BACKEND_USE_OPENMP)

@@ -54,6 +54,8 @@ namespace simple_backend {
 
 enum { TryLockSuccess = -1 };
 
+constexpr struct safe_template_ctor_tag_t { } safe_template_ctor_tag = { };
+
 namespace detail {
 
 // TODO non-recursive implementation, for stack overflow concerns?

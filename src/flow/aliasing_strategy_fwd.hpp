@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      release_use.cpp
+//                      aliasing_strategy_fwd.hpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,41 +42,40 @@
 //@HEADER
 */
 
-#include "runtime/runtime.hpp"
-#include "debug.hpp"
+#ifndef DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
+#define DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
 
-#include <flow/aliasing_strategy.hpp>
+namespace simple_backend {
+namespace aliasing {
 
-using namespace simple_backend;
 
-#define ALIAS_HANDLING_METHOD 2
+/** @brief CRTP base for aliasing strategies.
+ *  Mostly used for specifying the interface.
+ */
+template <typename ConcreteT>
+struct AliasingStrategy;
 
-//==============================================================================
 
-void
-Runtime::release_use(use_pending_release_t* use) {
+/**
+ *  Old strategy of adding a decrement action directly to the flow's triggered
+ *  action list.  This can quite easily blow the stack in recursive applications
+ */
+struct ActionListAppendAliasingStrategy;
 
-  _SIMPLE_DBG_DO([use](auto& state) { state.remove_registered_use(use); });
 
-  if(use->establishes_alias()) {
-    aliasing_strategy_.handle_aliasing_for_released_use(use);
-  }
+/**
+ *  Takes advantage of a layer of indirection to perform aliasing.
+ *  Currently buggy (probably).
+ */
+struct MergeableTriggerAliasingStrategy;
 
-  if(not use->is_anti_dependency() and use->get_anti_in_flow()) {
-    use->get_anti_in_flow()->get_ready_trigger()->decrement_count();
-  }
+/**
+ *  Uses the task queue to avoid blowing the stack, but otherwise does basically
+ *  the same thing as ActionListAppendAliasingStrategy
+ */
+struct WorkQueueAppendAliasingStrategy;
 
-  if(use->get_out_flow()) {
-    use->get_out_flow()->get_ready_trigger()->decrement_count();
-  }
+} // end namespace aliasing
+} // end namespace simple_backend
 
-  if(use->get_anti_out_flow()) {
-    use->get_anti_out_flow()->get_ready_trigger()->decrement_count();
-  }
-
-  if(use->immediate_permissions() == use_t::Commutative) {
-    use->get_in_flow()->comm_in_flow_release_trigger.activate();
-  }
-
-}
-
+#endif //DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP

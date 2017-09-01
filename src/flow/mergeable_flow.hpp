@@ -50,6 +50,7 @@
 
 #include <boost/lockfree/queue.hpp>
 #include <data_structures/trigger.hpp>
+#include <config.hpp>
 
 namespace simple_backend {
 
@@ -64,7 +65,13 @@ class MergeableTrigger {
     using shared_lock_t = std::shared_lock<shared_mutex_t>;
     using unique_lock_t = std::unique_lock<shared_mutex_t>;
     // items are deleted via a SelfDeleting action
-    using action_queue_t = boost::lockfree::queue<TriggeredActionBase*>;
+    using action_queue_t = types::thread_safe_queue_t<TriggeredActionBase*>;
+
+    // We need a shared pointer so that _do_actions() can race with the
+    // destructor (or so that actions in the list can delete the MergeableTrigger),
+    // and we need an atomic so that _do_actions() can race with add_action()
+    // and with the aliasing operation.
+    std::shared_ptr<std::atomic<action_queue_t*>> actions_ = { nullptr };
 
     shared_mutex_t aliasing_mutex_;
     // Semantics: once aliased_to_ becomes non-null, it doesn't change for the
@@ -73,12 +80,6 @@ class MergeableTrigger {
 
     std::atomic<int> counter_ = { 0 };
     std::atomic<bool> triggered_ = { false };
-
-    // We need a shared pointer so that _do_actions() can race with the
-    // destructor (or so that actions in the list can delete the MergeableTrigger),
-    // and we need an atomic so that _do_actions() can race with add_action()
-    // and with the aliasing operation.
-    std::shared_ptr<std::atomic<action_queue_t*>> actions_ = { nullptr };
 
     void _do_actions(shared_lock_t aliasing_lock) {
       // make a copy of the shared ptr, so that we can race with the destructor
