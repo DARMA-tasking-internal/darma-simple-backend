@@ -71,60 +71,26 @@ struct AliasingStrategy {
       assert(use->get_in_flow() and use->get_out_flow());
       static_cast<ConcreteT*>(this)->handle_aliasing_for_released_use(use);
     }
-
 };
 
 
 struct ActionListAppendAliasingStrategy
   : AliasingStrategy<ActionListAppendAliasingStrategy>
 {
-  public:
-
-    void
-    handle_aliasing_for_released_use(
-      use_pending_release_t* use
-    ) const
-    {
-
-      {
-        auto& out_flow = use->get_out_flow();
-        out_flow->get_ready_trigger()->increment_count();
-        use->get_in_flow()->get_ready_trigger()->add_action([out_flow]{
-          out_flow->get_ready_trigger()->decrement_count();
-        });
-      } // end out_flow scope
-
-      if(use->get_anti_in_flow()) {
-        assert(use->get_anti_out_flow());
-
-        auto& anti_in_flow = use->get_anti_in_flow();
-        anti_in_flow->get_ready_trigger()->increment_count();
-        use->get_anti_out_flow()->get_ready_trigger()->add_action([anti_in_flow]{
-          anti_in_flow->get_ready_trigger()->decrement_count();
-        });
-      }
-
-    }
-
+  void handle_aliasing_for_released_use(use_pending_release_t* use) const;
 };
 
 struct MergeableTriggerAliasingStrategy
   : AliasingStrategy<MergeableTriggerAliasingStrategy>
 {
-  void
-  handle_aliasing_for_released_use(
-    use_pending_release_t* use
-  ) const
-  {
-    use->get_in_flow()->alias_to(use->get_out_flow());
-    if(use->get_anti_in_flow()) {
-      assert(use->get_anti_out_flow());
-      use->get_anti_out_flow()->alias_to(use->get_anti_in_flow());
-    }
-
-  }
+  void handle_aliasing_for_released_use(use_pending_release_t* use) const;
 };
 
+struct WorkQueueAppendAliasingStrategy
+  : AliasingStrategy<WorkQueueAppendAliasingStrategy>
+{
+  void handle_aliasing_for_released_use(use_pending_release_t* use) const;
+};
 
 
 } // end namespace aliasing

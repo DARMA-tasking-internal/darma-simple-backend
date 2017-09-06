@@ -65,7 +65,8 @@
 #include <darma/interface/frontend/top_level.h>
 
 #include <darma.h>
-
+#include <ready_operation.hpp>
+#include <pending_operation.hpp>
 
 using namespace simple_backend;
 
@@ -122,7 +123,9 @@ Runtime::Runtime(task_unique_ptr&& top_level_task, SimpleBackendOptions const& o
 {
   shutdown_trigger.add_action([this]{
     for(int i = 0; i < nthreads_; ++i) {
-      workers[i].ready_tasks.emplace_back(ReadyTaskHolder::AllTasksDone);
+      workers[i].ready_tasks.emplace(
+        std::make_unique<SpecialMessage>(ReadyOperation::AllTasksDone)
+      );
     }
   });
 
@@ -131,7 +134,9 @@ Runtime::Runtime(task_unique_ptr&& top_level_task, SimpleBackendOptions const& o
   for(size_t i = 0; i < nthreads_; ++i) {
     workers.emplace_back(i, nthreads_);
   }
-  workers[0].ready_tasks.emplace_back(std::move(top_level_task));
+  workers[0].ready_tasks.emplace(
+    std::make_unique<ReadyTaskOperation>(std::move(top_level_task))
+  );
 }
 
 //==============================================================================
@@ -146,14 +151,8 @@ Runtime::register_task(task_unique_ptr&& task) {
   // keep the workers from shutting down until this task is done
   shutdown_trigger.increment_count();
 
-  // PendingTaskHolder deletes itself, so this isn't a memory leak
-  auto* holder = new PendingTaskHolder(std::move(task));
-  holder->enqueue_or_run(
-    // only run on the stack if the number of pending tasks is greater than
-    // or equal to the lookahead
-    pending_tasks.load() >= lookahead_
-    and thread_stack_depth < max_task_depth
-  );
+  // makes a PendingOperation that deletes itself, so this isn't a memory leak
+  make_pending_task(std::move(task));
 }
 
 //==============================================================================
@@ -181,9 +180,7 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
     // Enqueueing another task, so increment shutdown ready_trigger
     shutdown_trigger.increment_count();
 
-    // PendingTaskHolder deletes itself, so this isn't a memory leak
-    auto* holder = new PendingTaskHolder(tc->create_task_for_index(i));
-
+    auto task = tc->create_task_for_index(i);
 
     if(
       not darma_runtime::detail::key_traits<darma_runtime::types::key_t>::key_equal{}(
@@ -192,7 +189,7 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
       )
     ) {
       // TODO do this faster
-      holder->task_->set_name(
+      task->set_name(
         darma_runtime::make_key(
           std::string("backend index ") + std::to_string(i) + std::string(" of "),
           tc->get_name()
@@ -200,13 +197,10 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
       );
     }
 
-    assert(this_worker_id < nthreads_ and this_worker_id >= 0);
-
-    holder->enqueue_or_run((this_worker_id + i) % nthreads_,
-      // Prevent immediate execution so that all tc indices get spawned
-      // and have a chance to run concurrently
-      // TODO this should be dependent on some lookahead variable
-      /* allow_run_on_stack = */ false
+    // makes a PendingOperation that deletes itself, so this isn't a memory leak
+    make_pending_task(
+      std::move(task),
+      int((this_worker_id + i) % nthreads_)
     );
   }
 

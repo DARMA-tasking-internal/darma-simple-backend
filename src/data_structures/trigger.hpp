@@ -137,7 +137,7 @@ class TriggeredOnceAction
     void run() override {
       // TODO memory order
       if(not triggered_.test_and_set()) {
-        callable_();
+        _run_impl(std::index_sequence_for<Args...>{});
       }
     }
 };
@@ -276,7 +276,7 @@ class CountdownTrigger {
     template <typename Callable, typename... Args>
     void add_action(Callable&& callable, Args&&... args) {
       if(triggered_.load()) {
-        callable();
+        callable(std::forward<Args>(args)...);
       }
       else {
         actions_.add_action(std::make_unique<

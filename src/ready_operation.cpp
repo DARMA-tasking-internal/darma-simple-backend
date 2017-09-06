@@ -59,7 +59,7 @@ ReadyTaskOperation::run()
 
   // setup data
   for(auto&& dep : task_->get_dependencies()) {
-    if(dep->immediate_permissions() != Runtime::use_t::None) {
+    if(dep->immediate_permissions() != darma_runtime::frontend::Permissions::None) {
       dep->get_data_pointer_reference() = dep->get_in_flow()->control_block->data;
     }
   }

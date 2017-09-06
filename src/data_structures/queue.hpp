@@ -191,7 +191,7 @@ class SingleLockThreadSafeQueue
       std::swap(head_, head_->next);
 
       std::forward<Callable>(callable)(
-        *value.get()
+        std::move(*value.get())
       );
 
       return true;
@@ -210,8 +210,8 @@ class SingleLockThreadSafeQueue
     template <typename U>
     inline bool
     pop(U& popped) {
-      return consume_one([&](T& val) {
-        popped = val;
+      return consume_one([&](value_type&& val) {
+        popped = std::move(val);
       });
     }
 };

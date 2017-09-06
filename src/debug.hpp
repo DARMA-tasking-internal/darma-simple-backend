@@ -90,13 +90,11 @@ friendly_pointer_name(void const* ptr) {
 inline std::string
 permissions_to_string(darma_runtime::abstract::frontend::Use::permissions_t per) {
   switch(per) {
-#define _DARMA__perm_case(val) case darma_runtime::abstract::frontend::Use::Permissions::val: return #val;
+#define _DARMA__perm_case(val) case darma_runtime::frontend::Permissions::val: return #val;
     _DARMA__perm_case(None)
     _DARMA__perm_case(Read)
     _DARMA__perm_case(Modify)
     _DARMA__perm_case(Write)
-    _DARMA__perm_case(Commutative)
-    _DARMA__perm_case(Relaxed)
 #undef _DARMA__perm_case
   }
 }

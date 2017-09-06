@@ -57,7 +57,7 @@
 
 #define _darma_has_feature_simple_collectives 1
 
-#define _darma_has_feature_commutative_access_handles 1
+#define _darma_has_feature_commutative_access_handles 0
 
 #define _darma_has_feature_handle_collection_based_collectives 1
 

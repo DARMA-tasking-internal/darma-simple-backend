@@ -53,10 +53,10 @@ namespace simple_backend {
 
 struct ReadyOperation {
 
-  typedef enum OperationKind {
-    Runnable,
-    SpecialMessage
-  } operation_kind_t;
+  //  typedef enum OperationKind {
+  //    Runnable,
+  //    SpecialMessage
+  //  } operation_kind_t;
 
   typedef enum MessageKind {
     NoMessage,
@@ -65,9 +65,6 @@ struct ReadyOperation {
     , NeededForKokkosWork
     #endif
   } message_kind_t;
-
-  virtual operation_kind_t
-  get_operation_kind() const =0;
 
   virtual message_kind_t
   get_message_kind() const {
@@ -81,6 +78,8 @@ struct ReadyOperation {
   virtual bool is_runnable() const =0;
 
   virtual bool is_stealable() const =0;
+
+  virtual bool has_message() const =0;
 
   virtual ~ReadyOperation() = default;
 
@@ -98,16 +97,6 @@ struct SpecialMessage
     explicit
     SpecialMessage(message_kind_t kind) : message_kind_(kind) { }
 
-    operation_kind_t
-    get_operation_kind() const override {
-      return OperationKind::SpecialMessage;
-    }
-
-    message_kind_t
-    get_message_kind() const override {
-      return message_kind_;
-    }
-
     bool
     is_runnable() const override {
       return false;
@@ -116,6 +105,16 @@ struct SpecialMessage
     bool
     is_stealable() const override {
       return false;
+    }
+
+    bool
+    has_message() const override {
+      return true;
+    }
+
+    message_kind_t
+    get_message_kind() const {
+      return message_kind_;
     }
 
     ~SpecialMessage() noexcept override = default;
@@ -144,6 +143,11 @@ struct ReadyTaskOperation
     bool
     is_stealable() const override {
       return true;
+    }
+
+    bool
+    has_message() const override {
+      return false;
     }
 
     void run() override;
@@ -186,9 +190,16 @@ struct CallableOperation
       return Stealable;
     }
 
+    bool
+    has_message() const override {
+      return false;
+    }
+
     void run() override {
       callable_();
     }
+
+    ~CallableOperation() override = default;
 
 };
 

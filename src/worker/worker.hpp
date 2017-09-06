@@ -54,6 +54,7 @@
 
 #include "data_structures/concurrent_list.hpp"
 #include "ready_task_holder.hpp"
+#include "ready_operation.hpp"
 
 
 #if SIMPLE_BACKEND_ENABLE_WORK_STEALING
@@ -87,7 +88,9 @@ struct Worker {
 
     types::thread_safe_queue_t<ready_operation_ptr> ready_tasks;
 
-    int id = -1;
+    static constexpr auto NO_WORKER_ID = -1;
+
+    int id = NO_WORKER_ID;
     int n_threads;
 
     explicit

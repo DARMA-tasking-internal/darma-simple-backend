@@ -45,6 +45,8 @@
 #ifndef DARMASIMPLEBACKEND_PENDING_OPERATION_HPP
 #define DARMASIMPLEBACKEND_PENDING_OPERATION_HPP
 
+#include <tuple>
+
 #include <data_structures/trigger.hpp>
 #include <runtime/runtime.hpp>
 
@@ -58,9 +60,11 @@ struct PendingOperation {
 
     CountdownTrigger<SingleAction> trigger_;
 
+  public:
+
     template <typename Trigger>
     int
-    _add_dependency_on(Trigger&& prereq) {
+    add_dependency_on(Trigger&& prereq) {
       trigger_.increment_count();
       prereq->add_action([this]{
         trigger_.decrement_count();
@@ -68,38 +72,9 @@ struct PendingOperation {
       return 0; // just for fold expression emulation
     }
 
-  public:
+    PendingOperation() : trigger_(1) { }
 
-    // TODO technically these constructors should be private and operator new should be public
-
-    template <
-      typename... Triggers
-    >
-    PendingOperation(
-      Triggers&&... prerequisites
-    ) : trigger_(1)
-    {
-      std::make_tuple( // just for fold expression emulation
-        _add_dependency_on(std::forward<Triggers>(prerequisites))...
-      );
-      // If there are no dependencies, this should make the operation ready
-      // (even though it's not set yet)
-      trigger_.decrement_count();
-    }
-
-    template <
-      typename TriggerContainer
-    >
-    PendingOperation(
-      safe_template_ctor_tag_t,
-      TriggerContainer&& prereq_container
-    ) : trigger_(1)
-    {
-      for(auto&& prereq : prereq_container) {
-        _add_dependency_on(prereq);
-      }
-      // If there are no dependencies, this should make the operation ready
-      // (even though it's not set yet)
+    void make_ready() {
       trigger_.decrement_count();
     }
 
@@ -109,10 +84,14 @@ struct PendingOperation {
     void
     enqueue_or_run(
       ReadyOperationPtr&& ready_op,
+      int worker_id,
       bool allow_run_on_stack=true
     ) {
+      ++Runtime::instance->pending_tasks;
       allow_run_on_stack = allow_run_on_stack && (
         Runtime::thread_stack_depth < Runtime::instance->max_task_depth
+        // also only run on the stack if we're enqueueing on the current thread
+        && worker_id == Runtime::this_worker_id
       );
       if(allow_run_on_stack) {
         trigger_.add_or_do_action(
@@ -140,7 +119,7 @@ struct PendingOperation {
         );
       }
       else {
-        trigger_.add_or_do_action(
+        trigger_.add_action(
           // action to add
           [this](ReadyOperationPtr&& op){
             Runtime::instance->workers[Runtime::this_worker_id].run_operation(
@@ -156,28 +135,90 @@ struct PendingOperation {
 
 };
 
+
+namespace detail {
+
+/**
+ *  Helper that pops the callable off of the end
+ */
 template <
-  typename TriggerContainer,
-  typename Callable
+  size_t... TriggerIdxs,
+  typename... TriggersAndCallable
 >
 void
-make_pending_operation(TriggerContainer&& prereqs, Callable&& callable) {
-  ++Runtime::instance->pending_tasks;
-  auto self_deleting_object = new PendingOperation(
-    safe_template_ctor_tag,
-    std::forward<TriggerContainer>(prereqs)
+_when_all_helper(
+  std::integer_sequence<size_t, TriggerIdxs...>,
+  TriggersAndCallable&&... triggers_and_callable
+) {
+  auto self_deleting_object = new PendingOperation();
+  std::make_tuple( // just for fold emulation
+    self_deleting_object->add_dependency_on(
+      std::get<TriggerIdxs>(std::forward_as_tuple(
+        std::forward<TriggersAndCallable>(triggers_and_callable)...
+      ))
+    )...
   );
+  self_deleting_object->make_ready();
   self_deleting_object->enqueue_or_run(
-    make_callable_operation(std::forward<Callable>(callable))
+    simple_backend::make_callable_operation(
+      std::get<sizeof...(TriggerIdxs)>(
+        std::forward_as_tuple(
+          std::forward<TriggersAndCallable>(triggers_and_callable)...
+        )
+      )
+    ),
+    simple_backend::Runtime::this_worker_id
+  );
+}
+
+} // end namespace detail
+
+template <typename... TriggersAndCallable>
+auto
+when_all_ready_do(TriggersAndCallable&&... args) {
+  // Call a helper that extracts the last variadic argument
+  return detail::_when_all_helper(
+    std::make_index_sequence<sizeof...(TriggersAndCallable) - 1>{},
+    std::forward<TriggersAndCallable>(args)...
+  );
+}
+
+template <typename Trigger, typename Callable>
+auto
+when_ready_do(Trigger&& trigger, Callable&& callable) {
+  // call the same helper as when_all_do
+  return detail::_when_all_helper(
+    std::make_index_sequence<1>{},
+    std::forward<Trigger>(trigger), std::forward<Callable>(callable)
+  );
+}
+
+template <typename TriggerContainer, typename Callable>
+auto
+when_all_container_do(
+  TriggerContainer&& trigger_container,
+  Callable&& callable
+) {
+  auto self_deleting_object = new PendingOperation();
+  for(auto&& trigger : trigger_container) {
+    self_deleting_object->add_dependency_on(trigger);
+  }
+  self_deleting_object->make_ready();
+  self_deleting_object->enqueue_or_run(
+    std::forward<Callable>(callable),
+    simple_backend::Runtime::this_worker_id
   );
 }
 
 inline void
 make_pending_task(
-  darma_runtime::abstract::backend::runtime_t::task_unique_ptr&& task
+  darma_runtime::abstract::backend::runtime_t::task_unique_ptr&& task,
+  int worker_id = Worker::NO_WORKER_ID
 ) {
-  using trigger_t = std::decay_t<decltype(darma_runtime::types::flow_t{}->get_ready_trigger())>;
-  std::vector<trigger_t> prereqs;
+  if(worker_id == Worker::NO_WORKER_ID) {
+    worker_id = simple_backend::Runtime::this_worker_id;
+  }
+  auto self_deleting_object = new PendingOperation();
   for(auto dep : task->get_dependencies()) {
     // Dependencies
     if(dep->is_dependency()) {
@@ -186,18 +227,26 @@ make_pending_task(
       //  commutative_locks_to_obtain.emplace_back(std::ref(dep->get_in_flow()->commutative_mtx));
       //  commutative_in_flows.emplace_back(dep->get_in_flow());
       //}
-      prereqs.push_back(dep->get_in_flow()->get_ready_trigger());
+      self_deleting_object->add_dependency_on(dep->get_in_flow()->get_ready_trigger());
     }
 
     // Antidependencies
     if(dep->is_anti_dependency()) {
       assert(dep->get_anti_in_flow());
-      prereqs.push_back(dep->get_anti_in_flow()->get_ready_trigger());
+      self_deleting_object->add_dependency_on(dep->get_anti_in_flow()->get_ready_trigger());
     }
   }
 
-  make_pending_operation(
-    prereqs, std::make_unique<ReadyTaskOperation>(std::move(task))
+  // Decrement the "setup dependency" of the pending operation object
+  self_deleting_object->make_ready();
+
+  // for now, data parallel tasks can't run directly on the stack
+  bool allow_on_stack = not task->is_data_parallel_task();
+
+  self_deleting_object->enqueue_or_run(
+    std::make_unique<ReadyTaskOperation>(std::move(task)),
+    worker_id,
+    allow_on_stack
   );
 
 };

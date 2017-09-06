@@ -60,38 +60,38 @@
 using namespace simple_backend;
 
 
-void Worker::run_task(Runtime::task_unique_ptr&& task) {
-
-  _SIMPLE_DBG_DO([&](auto& state){
-    state.running_tasks.insert(task.get());
-    state.pending_tasks.erase(task.get());
-  });
-
-  // setup data
-  for(auto&& dep : task->get_dependencies()) {
-    if(dep->immediate_permissions() != Runtime::use_t::None) {
-      dep->get_data_pointer_reference() = dep->get_in_flow()->control_block->data;
-    }
-  }
-  // set the running task
-  auto* old_running_task = Runtime::running_task;
-  Runtime::running_task = task.get();
-
-  task->run();
-
-  _SIMPLE_DBG_DO([&](auto& state){
-    state.running_tasks.erase(task.get());
-  });
-
-  // Delete the task object
-  task = nullptr;
-
-  // Reset the running task ptr
-  Runtime::running_task = old_running_task;
-
-  Runtime::instance->shutdown_trigger.decrement_count();
-
-}
+//void Worker::run_task(Runtime::task_unique_ptr&& task) {
+//
+//  _SIMPLE_DBG_DO([&](auto& state){
+//    state.running_tasks.insert(task.get());
+//    state.pending_tasks.erase(task.get());
+//  });
+//
+//  // setup data
+//  for(auto&& dep : task->get_dependencies()) {
+//    if(dep->immediate_permissions() != Runtime::use_t::None) {
+//      dep->get_data_pointer_reference() = dep->get_in_flow()->control_block->data;
+//    }
+//  }
+//  // set the running task
+//  auto* old_running_task = Runtime::running_task;
+//  Runtime::running_task = task.get();
+//
+//  task->run();
+//
+//  _SIMPLE_DBG_DO([&](auto& state){
+//    state.running_tasks.erase(task.get());
+//  });
+//
+//  // Delete the task object
+//  task = nullptr;
+//
+//  // Reset the running task ptr
+//  Runtime::running_task = old_running_task;
+//
+//  Runtime::instance->shutdown_trigger.decrement_count();
+//
+//}
 
 #if 0
 void Worker::run_work_loop(size_t n_threads_total, size_t threads_per_partition) {
