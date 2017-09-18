@@ -53,11 +53,6 @@ namespace simple_backend {
 
 struct ReadyOperation {
 
-  //  typedef enum OperationKind {
-  //    Runnable,
-  //    SpecialMessage
-  //  } operation_kind_t;
-
   typedef enum MessageKind {
     NoMessage,
     AllTasksDone
@@ -81,7 +76,7 @@ struct ReadyOperation {
 
   virtual bool has_message() const =0;
 
-  virtual ~ReadyOperation() = default;
+  virtual ~ReadyOperation() noexcept = default;
 
 };
 
@@ -113,7 +108,7 @@ struct SpecialMessage
     }
 
     message_kind_t
-    get_message_kind() const {
+    get_message_kind() const override {
       return message_kind_;
     }
 
@@ -153,8 +148,7 @@ struct ReadyTaskOperation
     void run() override;
 
 
-    ~ReadyTaskOperation()
-      noexcept(std::is_nothrow_destructible<task_unique_ptr>::value) override = default;
+    ~ReadyTaskOperation() noexcept override = default;
 
 };
 
@@ -199,7 +193,7 @@ struct CallableOperation
       callable_();
     }
 
-    ~CallableOperation() override = default;
+    ~CallableOperation() noexcept override = default;
 
 };
 

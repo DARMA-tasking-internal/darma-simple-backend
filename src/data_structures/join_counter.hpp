@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      aliasing_strategy_fwd.hpp
+//                      join_counter.hpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,41 +42,87 @@
 //@HEADER
 */
 
-#ifndef DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
-#define DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
+#ifndef DARMASIMPLEBACKEND_JOIN_COUNTER_HPP
+#define DARMASIMPLEBACKEND_JOIN_COUNTER_HPP
+
+#include "event.hpp"
 
 namespace simple_backend {
-namespace aliasing {
+
+class JoinCounter
+  : public Event
+{
+  private:
+
+    std::atomic<std::uint64_t> count_ = { 1 };
+
+  public:
+
+    explicit
+    JoinCounter(uint64_t initial_count = 1)
+      : count_(initial_count)
+    {
+      //if(count_.load() == 0) {
+      //  this->make_ready();
+      //}
+    }
+
+    inline void
+    increment_count(std::memory_order mem_order = std::memory_order_seq_cst) {
+      advance_count(1);
+    }
+
+    inline void
+    advance_count(uint64_t amount,
+      std::memory_order mem_order = std::memory_order_seq_cst
+    ) {
+      assert(not this->is_triggered(mem_order));
+      count_.fetch_add(amount, mem_order);
+    }
+
+    inline void
+    decrement_count(
+      std::memory_order mem_order = std::memory_order_seq_cst
+    ) {
+      assert(not this->is_triggered(mem_order));
+      if(count_.fetch_sub(1) == 1) {
+        this->make_ready(mem_order);
+      }
+    }
+
+    inline void
+    attach_decrement_of(
+      std::shared_ptr<JoinCounter> const& to_decrement,
+      std::memory_order decrement_mem_order = std::memory_order_seq_cst
+    ) {
+      this->attach_action([to_decrement, decrement_mem_order] {
+        to_decrement->decrement_count(decrement_mem_order);
+      });
+
+    }
+
+    uint64_t
+    get_count(
+      std::memory_order mem_order = std::memory_order_seq_cst
+    ) {
+      return count_.load(mem_order);
+    }
+};
 
 
-/** @brief CRTP base for aliasing strategies.
- *  Mostly used for specifying the interface.
- */
-template <typename ConcreteT>
-struct AliasingStrategy;
+class ManuallyTriggeredEvent
+  : public Event
+{
+  public:
 
+    void trigger_event(
+      std::memory_order mem_order = std::memory_order_seq_cst
+    ) {
+      this->make_ready(mem_order);
+    }
 
-/**
- *  Old strategy of adding a decrement action directly to the flow's triggered
- *  action list.  This can quite easily blow the stack in recursive applications
- */
-struct ActionListAppendAliasingStrategy;
+};
 
-
-// Currently disabled because it requires additional complexity in the Flow
-///**
-// *  Takes advantage of a layer of indirection to perform aliasing.
-// *  Currently buggy (probably).
-// */
-//struct MergeableTriggerAliasingStrategy;
-
-/**
- *  Uses the task queue to avoid blowing the stack, but otherwise does basically
- *  the same thing as ActionListAppendAliasingStrategy
- */
-struct WorkQueueAppendAliasingStrategy;
-
-} // end namespace aliasing
 } // end namespace simple_backend
 
-#endif //DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
+#endif //DARMASIMPLEBACKEND_JOIN_COUNTER_HPP

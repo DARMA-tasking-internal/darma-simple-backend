@@ -47,7 +47,7 @@
 
 #include <tuple>
 
-#include <data_structures/trigger.hpp>
+#include <data_structures/join_counter.hpp>
 #include <runtime/runtime.hpp>
 
 #include "ready_operation.hpp"
@@ -58,24 +58,24 @@ struct PendingOperation {
 
   protected:
 
-    CountdownTrigger<SingleAction> trigger_;
+    std::shared_ptr<JoinCounter> ready_event_;
 
   public:
 
-    template <typename Trigger>
+    template <typename EventT>
     int
-    add_dependency_on(Trigger&& prereq) {
-      trigger_.increment_count();
-      prereq->add_action([this]{
-        trigger_.decrement_count();
+    add_dependency_on(EventT&& prereq) {
+      ready_event_->increment_count();
+      prereq->attach_action([ready_event=ready_event_]{
+        ready_event->decrement_count();
       });
       return 0; // just for fold expression emulation
     }
 
-    PendingOperation() : trigger_(1) { }
+    PendingOperation() : ready_event_(std::make_shared<JoinCounter>(1)) { }
 
     void make_ready() {
-      trigger_.decrement_count();
+      ready_event_->decrement_count();
     }
 
     template <
@@ -94,10 +94,10 @@ struct PendingOperation {
         && worker_id == Runtime::this_worker_id
       );
       if(allow_run_on_stack) {
-        trigger_.add_or_do_action(
+        ready_event_->attach_or_do_action(
           // action to add
           [this](ReadyOperationPtr&& op){
-            Runtime::instance->workers[Runtime::this_worker_id].run_operation(
+            Runtime::instance->workers[Runtime::this_worker_id].ready_tasks.emplace(
               std::forward<ReadyOperationPtr>(op)
             );
             --Runtime::instance->pending_tasks;
@@ -119,10 +119,10 @@ struct PendingOperation {
         );
       }
       else {
-        trigger_.add_action(
+        ready_event_->attach_action(
           // action to add
           [this](ReadyOperationPtr&& op){
-            Runtime::instance->workers[Runtime::this_worker_id].run_operation(
+            Runtime::instance->workers[Runtime::this_worker_id].ready_tasks.emplace(
               std::forward<ReadyOperationPtr>(op)
             );
             --Runtime::instance->pending_tasks;
@@ -142,28 +142,28 @@ namespace detail {
  *  Helper that pops the callable off of the end
  */
 template <
-  size_t... TriggerIdxs,
-  typename... TriggersAndCallable
+  size_t... EventIdxs,
+  typename... EventsAndCallable
 >
 void
 _when_all_helper(
-  std::integer_sequence<size_t, TriggerIdxs...>,
-  TriggersAndCallable&&... triggers_and_callable
+  std::integer_sequence<size_t, EventIdxs...>,
+  EventsAndCallable&&... triggers_and_callable
 ) {
   auto self_deleting_object = new PendingOperation();
   std::make_tuple( // just for fold emulation
     self_deleting_object->add_dependency_on(
-      std::get<TriggerIdxs>(std::forward_as_tuple(
-        std::forward<TriggersAndCallable>(triggers_and_callable)...
+      std::get<EventIdxs>(std::forward_as_tuple(
+        std::forward<EventsAndCallable>(triggers_and_callable)...
       ))
     )...
   );
   self_deleting_object->make_ready();
   self_deleting_object->enqueue_or_run(
     simple_backend::make_callable_operation(
-      std::get<sizeof...(TriggerIdxs)>(
+      std::get<sizeof...(EventIdxs)>(
         std::forward_as_tuple(
-          std::forward<TriggersAndCallable>(triggers_and_callable)...
+          std::forward<EventsAndCallable>(triggers_and_callable)...
         )
       )
     ),
@@ -173,30 +173,30 @@ _when_all_helper(
 
 } // end namespace detail
 
-template <typename... TriggersAndCallable>
+template <typename... EventsAndCallable>
 auto
-when_all_ready_do(TriggersAndCallable&&... args) {
+when_all_ready_do(EventsAndCallable&&... args) {
   // Call a helper that extracts the last variadic argument
   return detail::_when_all_helper(
-    std::make_index_sequence<sizeof...(TriggersAndCallable) - 1>{},
-    std::forward<TriggersAndCallable>(args)...
+    std::make_index_sequence<sizeof...(EventsAndCallable) - 1>{},
+    std::forward<EventsAndCallable>(args)...
   );
 }
 
-template <typename Trigger, typename Callable>
+template <typename Event, typename Callable>
 auto
-when_ready_do(Trigger&& trigger, Callable&& callable) {
+when_ready_do(Event&& trigger, Callable&& callable) {
   // call the same helper as when_all_do
   return detail::_when_all_helper(
     std::make_index_sequence<1>{},
-    std::forward<Trigger>(trigger), std::forward<Callable>(callable)
+    std::forward<Event>(trigger), std::forward<Callable>(callable)
   );
 }
 
-template <typename TriggerContainer, typename Callable>
+template <typename EventContainer, typename Callable>
 auto
 when_all_container_do(
-  TriggerContainer&& trigger_container,
+  EventContainer&& trigger_container,
   Callable&& callable
 ) {
   auto self_deleting_object = new PendingOperation();

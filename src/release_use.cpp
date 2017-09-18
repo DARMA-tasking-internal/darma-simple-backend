@@ -74,9 +74,9 @@ Runtime::release_use(use_pending_release_t* use) {
     use->get_anti_out_flow()->get_ready_trigger()->decrement_count();
   }
 
-  if(use->coherence_mode() == darma_runtime::frontend::CoherenceMode::Commutative) {
-    use->get_in_flow()->comm_in_flow_release_trigger.activate();
-  }
+  //if(use->coherence_mode() == darma_runtime::frontend::CoherenceMode::Commutative) {
+  //  use->get_in_flow()->comm_in_flow_release_trigger.activate();
+  //}
 
 }
 

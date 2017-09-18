@@ -53,7 +53,7 @@ using namespace simple_backend;
 //
 //Runtime::PendingTaskHolder::PendingTaskHolder(task_unique_ptr&& task)
 //  : task_(std::move(task)),
-//    trigger_(task_->get_dependencies().size() * 2)
+//    ready_event_(task_->get_dependencies().size() * 2)
 //{
 //  ++Runtime::instance->pending_tasks_;
 //  _SIMPLE_DBG_DO([this](auto& state){
@@ -164,7 +164,7 @@ using namespace simple_backend;
 //
 //  // Increment the trigger so that the corresponding decrement after finding
 //  // no dependencies will enqueue the task
-//  trigger_.increment_count();
+//  ready_event_.increment_count();
 //
 //  for(auto dep : task_->get_dependencies()) {
 //    // Dependencies
@@ -174,34 +174,34 @@ using namespace simple_backend;
 //        commutative_in_flows.emplace_back(dep->get_in_flow());
 //      }
 //      dep->get_in_flow()->get_ready_trigger()->add_action([this] {
-//        trigger_.decrement_count();
+//        ready_event_.decrement_count();
 //      });
 //    }
 //    else {
-//      trigger_.decrement_count();
+//      ready_event_.decrement_count();
 //    }
 //
 //    // Antidependencies
 //    if(dep->is_anti_dependency()) {
 //      assert(dep->get_anti_in_flow());
 //      dep->get_anti_in_flow()->get_ready_trigger()->add_action([this] {
-//          trigger_.decrement_count();
+//          ready_event_.decrement_count();
 //        }
 //      );
 //    }
 //    else {
-//      trigger_.decrement_count();
+//      ready_event_.decrement_count();
 //    }
 //  }
 //
 //  // decrement indicating that we've looked at all of the dependencies; corresponds
 //  // to the increment before the for loop.
-//  trigger_.decrement_count();
+//  ready_event_.decrement_count();
 //
 //  if(commutative_locks_to_obtain.size() > 0) {
 //    // When everything else is ready, we want to try and obtain exclusive
 //    // access to all commutative in-flows
-//    trigger_.add_action(
+//    ready_event_.add_action(
 //      ObtainExclusiveAccessAction(*this,
 //        std::move(commutative_locks_to_obtain),
 //        std::move(commutative_in_flows),
@@ -212,7 +212,7 @@ using namespace simple_backend;
 //  }
 //  else {
 //    if(allow_run_on_stack and worker_id == this_worker_id) {
-//      trigger_.add_or_do_action(
+//      ready_event_.add_or_do_action(
 //        // If all of the dependencies and antidependencies aren't ready, place it on
 //        // the queue when it becomes ready
 //        [this, worker_id] {
@@ -229,7 +229,7 @@ using namespace simple_backend;
 //      );
 //    }
 //    else {
-//      trigger_.add_action(
+//      ready_event_.add_action(
 //        // If all of the dependencies and antidependencies aren't ready, place it on
 //        // the queue when it becomes ready
 //        [this, worker_id] {

@@ -80,19 +80,6 @@ class Runtime
     using use_pending_registration_t = darma_runtime::abstract::frontend::UsePendingRegistration;
     using use_pending_release_t = darma_runtime::abstract::backend::Runtime::use_pending_release_t;
 
-    struct PendingTaskHolder {
-      public:
-
-        task_unique_ptr task_;
-        CountdownTrigger<SingleAction> trigger_;
-
-        PendingTaskHolder(task_unique_ptr&& task);
-        ~PendingTaskHolder();
-        void enqueue_or_run(bool allow_run_on_stack);
-        void enqueue_or_run(size_t worker_id, bool allow_run_on_stack);
-    };
-
-
   private:
 
     // Maximum concurrency
@@ -242,7 +229,7 @@ class Runtime
     size_t max_task_depth = 100;
     std::atomic<size_t> pending_tasks = { 0 };
 
-    CountdownTrigger<SingleAction> shutdown_trigger;
+    JoinCounter shutdown_counter;
     std::atomic<size_t> dorment_workers = { 0 };
 
     #if SIMPLE_BACKEND_USE_KOKKOS

@@ -79,6 +79,6 @@ ReadyTaskOperation::run()
   // Reset the running task ptr
   Runtime::running_task = old_running_task;
 
-  Runtime::instance->shutdown_trigger.decrement_count();
+  Runtime::instance->shutdown_counter.decrement_count();
 
 }

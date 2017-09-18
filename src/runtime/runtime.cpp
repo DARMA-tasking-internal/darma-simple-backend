@@ -116,12 +116,12 @@ Runtime::wait_for_top_level_instance_to_shut_down() {
 
 // Construct from a task that is ready to run
 Runtime::Runtime(task_unique_ptr&& top_level_task, SimpleBackendOptions const& options)
-  : nthreads_(options.n_threads), shutdown_trigger(1), lookahead_(options.lookahead)
+  : nthreads_(options.n_threads), shutdown_counter(1), lookahead_(options.lookahead)
 #if SIMPLE_BACKEND_USE_KOKKOS
     , n_kokkos_partitions(options.kokkos_partitions)
 #endif
 {
-  shutdown_trigger.add_action([this]{
+  shutdown_counter.attach_action([this]{
     for(int i = 0; i < nthreads_; ++i) {
       workers[i].ready_tasks.emplace(
         std::make_unique<SpecialMessage>(ReadyOperation::AllTasksDone)
@@ -149,7 +149,7 @@ Runtime::get_running_task() const { return running_task; }
 void
 Runtime::register_task(task_unique_ptr&& task) {
   // keep the workers from shutting down until this task is done
-  shutdown_trigger.increment_count();
+  shutdown_counter.increment_count();
 
   // makes a PendingOperation that deletes itself, so this isn't a memory leak
   make_pending_task(std::move(task));
@@ -160,7 +160,7 @@ Runtime::register_task(task_unique_ptr&& task) {
 void
 Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
   // keep the workers from shutting down until this task is done
-  shutdown_trigger.increment_count();
+  shutdown_counter.increment_count();
 
   auto tc_token = std::make_shared<TaskCollectionToken>(tc->size());
   tc->set_task_collection_token(tc_token);
@@ -178,7 +178,7 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
 
   for(size_t i = 0; i < tc->size(); ++i) {
     // Enqueueing another task, so increment shutdown ready_trigger
-    shutdown_trigger.increment_count();
+    shutdown_counter.increment_count();
 
     auto task = tc->create_task_for_index(i);
 
@@ -205,7 +205,7 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
   }
 
   tc = nullptr;
-  shutdown_trigger.decrement_count();
+  shutdown_counter.decrement_count();
 }
 
 //==============================================================================
@@ -263,7 +263,7 @@ Runtime::spin_up_worker_threads()
       );
     } // end partition parallel
 #endif
-    while(not Runtime::instance->shutdown_trigger.get_triggered()) {
+    while(not Runtime::instance->shutdown_counter.get_triggered()) {
 #if SIMPLE_BACKEND_USE_FCONTEXT
       // jumped to run a Kokkos task, so run it
       auto ktask = Runtime::instance->ready_kokkos_tasks[partition_id].get_and_pop_front();
@@ -286,7 +286,7 @@ Runtime::spin_up_worker_threads()
 
       }); // end partition parallel
 
-      if (Runtime::instance->shutdown_trigger.get_triggered()) {
+      if (Runtime::instance->shutdown_counter.get_triggered()) {
         break;
       } else {
         assert(Kokkos::Impl::t_openmp_instance);

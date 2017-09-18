@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      aliasing_strategy_fwd.hpp
+//                      macros.hpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,41 +42,8 @@
 //@HEADER
 */
 
-#ifndef DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
-#define DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
-
-namespace simple_backend {
-namespace aliasing {
+#ifndef DARMASIMPLEBACKEND_MACROS_HPP
+#define DARMASIMPLEBACKEND_MACROS_HPP
 
 
-/** @brief CRTP base for aliasing strategies.
- *  Mostly used for specifying the interface.
- */
-template <typename ConcreteT>
-struct AliasingStrategy;
-
-
-/**
- *  Old strategy of adding a decrement action directly to the flow's triggered
- *  action list.  This can quite easily blow the stack in recursive applications
- */
-struct ActionListAppendAliasingStrategy;
-
-
-// Currently disabled because it requires additional complexity in the Flow
-///**
-// *  Takes advantage of a layer of indirection to perform aliasing.
-// *  Currently buggy (probably).
-// */
-//struct MergeableTriggerAliasingStrategy;
-
-/**
- *  Uses the task queue to avoid blowing the stack, but otherwise does basically
- *  the same thing as ActionListAppendAliasingStrategy
- */
-struct WorkQueueAppendAliasingStrategy;
-
-} // end namespace aliasing
-} // end namespace simple_backend
-
-#endif //DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
+#endif //DARMASIMPLEBACKEND_MACROS_HPP

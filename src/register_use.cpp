@@ -87,9 +87,15 @@ Runtime::register_use(use_pending_registration_t* use) {
     }
     case FlowRelationship::Next :
     case FlowRelationship::NextCollection : {
+      // TODO figure out when this case comes up.  In general, in_flows should never be Next
       assert(in_rel.related_flow());
       in_flow = std::make_shared<Flow>(
-        (*in_rel.related_flow())->control_block
+        (*in_rel.related_flow())->control_block,
+        1
+      );
+      // Attach the decrement of the initial count (1) to the related flow
+      (*in_rel.related_flow())->get_ready_trigger()->attach_decrement_of(
+        in_flow->get_ready_trigger()
       );
       break;
     }
@@ -129,9 +135,9 @@ Runtime::register_use(use_pending_registration_t* use) {
         ),
         1 // start with a count so that the collection flow can make it ready
       );
-      (*in_rel.related_flow())->get_ready_trigger()->add_action([in_flow] {
-        in_flow->get_ready_trigger()->decrement_count();
-      });
+      (*in_rel.related_flow())->get_ready_trigger()->attach_decrement_of(
+        in_flow->get_ready_trigger()
+      );
       break;
     }
     case FlowRelationship::IndexedFetching : {
@@ -140,16 +146,14 @@ Runtime::register_use(use_pending_registration_t* use) {
         (*in_rel.related_flow())->control_block
       );
       in_flow = std::make_shared<Flow>(
-        std::make_shared<ControlBlock>(use->get_handle(), nullptr)
+        std::make_shared<ControlBlock>(use->get_handle(), nullptr),
+        1
       );
 
-      // Increment the ready trigger so that the release of the fetching trigger
-      // can decrement it.
-      in_flow->get_ready_trigger()->increment_count();
       assert(in_rel.related_flow()->get()->parent_collection_token);
       in_rel.related_flow()->get()->parent_collection_token->current_published_entries.evaluate_at(
         std::make_tuple(
-          use->get_handle()->get_key(), *in_rel.version_key(), in_rel.index()
+          coll_cntrl->handle->get_key(), *in_rel.version_key(), in_rel.index()
         ),
         [in_flow](PublicationTableEntry& entry) {
           // Create the publication table entry if it doesn't already exist
@@ -158,7 +162,7 @@ Runtime::register_use(use_pending_registration_t* use) {
           }
 
           // tell the fetching trigger to alert us when the data is ready
-          entry.entry->fetching_trigger.add_action([entry_entry=entry.entry, in_flow]{
+          entry.entry->fetching_join_counter->attach_action([entry_entry=entry.entry, in_flow]{
             in_flow->control_block->data =
               (*entry_entry->source_flow)->control_block->data;
             in_flow->get_ready_trigger()->decrement_count();
@@ -202,6 +206,12 @@ Runtime::register_use(use_pending_registration_t* use) {
     case FlowRelationship::SameCollection : {
       assert(anti_in_rel.related_anti_flow());
       anti_in_flow = *anti_in_rel.related_anti_flow();
+      // Could be the same as an insignificant anti-in, so we need to check for nullptrs
+      if(anti_in_flow and not use->is_anti_dependency()) {
+        // it's the anti-in of a non-anti-dependency use, so it can't be ready
+        // until this use is released
+        anti_in_flow->get_ready_trigger()->increment_count();
+      }
       // we may need to check if it's an indexed_fetching_antiflow here and do
       // something special for breaking antidependency cycles
       break;
@@ -209,14 +219,39 @@ Runtime::register_use(use_pending_registration_t* use) {
     case FlowRelationship::Next :
     case FlowRelationship::NextCollection : {
       assert(anti_in_rel.related_anti_flow());
-      // The related anti-flow is unused for now, but we should still assert that it's there
-      anti_in_flow = std::make_shared<AntiFlow>();
+      /* TODO: actually, the anti_in should never be a next when
+       * use->is_anti_dependency() returns true, so we should be able to get rid
+       * of this extra nonsense. We need to decide if this should be a hard requirement
+       * */
+
+
+#ifdef SIMPLE_BACKEND_GENERAL_REGISTER_USE_ANTI_IN_NEXT_CASE
+      // In can only be a Next if
+      // Start at 2 if it's not an anti_dependency use, 1 if it is.
+      anti_in_flow = std::make_shared<AntiFlow>(
+        1 + (int)(not use->is_anti_dependency())
+      );
+      // By definition of "Next", it can't be ready before its related anti flow,
+      // so we can attach a decrement to the related anti_flow.  This keeps us
+      // from having to start at 0 when it's an anti_dependency use
+
+      // attach the decrement of the starting count (1) to the related flow
+      anti_in_rel.related_anti_flow()->get()->get_ready_trigger()->attach_decrement_of(
+        anti_in_flow->get_ready_trigger()
+      );
+#else
+      assert(not use->is_anti_dependency());
+      anti_in_flow = std::make_shared<AntiFlow>(1);
+#endif
       break;
+
     }
     case FlowRelationship::Forwarding : {
       assert(anti_in_rel.related_anti_flow());
       // The related anti-flow is unused for now, but we should still assert that it's there
       assert(*anti_in_rel.related_anti_flow());
+      // This should only happen if use is an anti_dependency
+      assert(use->is_anti_dependency());
       anti_in_flow = std::make_shared<AntiFlow>(
         1 // start with a count so that the flow we forwarded it from can make it ready
       );
@@ -229,14 +264,16 @@ Runtime::register_use(use_pending_registration_t* use) {
     }
     case FlowRelationship::IndexedLocal : {
       assert(anti_in_rel.related_anti_flow());
+      // If anti-in is significant here, use should always be an anti-dependency use
+      assert(use->is_anti_dependency());
       // Only create an indexed local version if the collection flow isn't insignificant
       if(*anti_in_rel.related_anti_flow()) {
         anti_in_flow = std::make_shared<AntiFlow>(
           1 // start with a count so that the collection flow can make it ready
         );
-        (*anti_in_rel.related_anti_flow())->get_ready_trigger()->add_action([anti_in_flow] {
-          anti_in_flow->get_ready_trigger()->decrement_count();
-        });
+        (*anti_in_rel.related_anti_flow())->get_ready_trigger()->attach_decrement_of(
+          anti_in_flow->get_ready_trigger()
+        );
       }
       break;
     }
@@ -247,9 +284,6 @@ Runtime::register_use(use_pending_registration_t* use) {
   } // end switch over anti-in flow relationship
 
   use->set_anti_in_flow(anti_in_flow);
-  if(anti_in_flow and not use->is_anti_dependency()) {
-    anti_in_flow->get_ready_trigger()->increment_count();
-  }
 
   // </editor-fold> end in flow relationship }}}2
   //----------------------------------------------------------------------------
@@ -276,18 +310,25 @@ Runtime::register_use(use_pending_registration_t* use) {
     case FlowRelationship::SameCollection : {
       assert(out_related);
       out_flow = *out_related;
+      // It's being used as an out, so make it not ready until this is released
+      out_flow->get_ready_trigger()->increment_count();
       break;
     }
     case FlowRelationship::Next :
     case FlowRelationship::NextCollection : {
       assert(out_related);
-      out_flow = std::make_shared<Flow>((*out_related)->control_block);
+      out_flow = std::make_shared<Flow>((*out_related)->control_block,
+        1
+      );
       break;
     }
     case FlowRelationship::Null :
     case FlowRelationship::NullCollection : {
       assert(in_flow);
-      out_flow = std::make_shared<Flow>(in_flow->control_block);
+      out_flow = std::make_shared<Flow>(
+        in_flow->control_block,
+        1
+      );
       break;
     }
     case FlowRelationship::IndexedLocal : {
@@ -295,10 +336,13 @@ Runtime::register_use(use_pending_registration_t* use) {
       // Indexed local out doesn't need a control block
       auto out_flow_related = *out_related;
       out_flow_related->get_ready_trigger()->increment_count();
-      out_flow = std::make_shared<Flow>(std::make_shared<ControlBlock>(nullptr));
-      out_flow->get_ready_trigger()->add_action([out_flow_related]{
-        out_flow_related->get_ready_trigger()->decrement_count();
-      });
+      out_flow = std::make_shared<Flow>(
+        std::make_shared<ControlBlock>(nullptr),
+        1
+      );
+      out_flow->get_ready_trigger()->attach_decrement_of(
+        out_flow_related->get_ready_trigger()
+      );
       break;
     }
     default : {
@@ -308,8 +352,6 @@ Runtime::register_use(use_pending_registration_t* use) {
   } // end switch over in flow relationship
 
   if(out_flow) {
-    // It's being used as an out, so make it not ready until this is released
-    out_flow->get_ready_trigger()->increment_count();
     use->set_out_flow(out_flow);
   }
 
@@ -339,13 +381,15 @@ Runtime::register_use(use_pending_registration_t* use) {
     }
     case FlowRelationship::Initial :
     case FlowRelationship::InitialCollection : {
-      anti_out_flow = std::make_shared<AntiFlow>();
+      anti_out_flow = std::make_shared<AntiFlow>(1);
       break;
     }
     case FlowRelationship::Same :
     case FlowRelationship::SameCollection : {
       assert(anti_out_rel.related_anti_flow());
       anti_out_flow = *anti_out_related_anti_flow;
+      // It's being used as an out, so make it not ready until this is released
+      anti_out_flow->get_ready_trigger()->increment_count();
       break;
     }
     case FlowRelationship::Next :
@@ -353,7 +397,7 @@ Runtime::register_use(use_pending_registration_t* use) {
       assert(anti_out_related_anti_flow);
       assert(*anti_out_related_anti_flow);
       // The related anti-flow is unused for now, but we should still assert that it's there
-      anti_out_flow = std::make_shared<AntiFlow>();
+      anti_out_flow = std::make_shared<AntiFlow>(1);
       break;
     }
     case FlowRelationship::IndexedLocal : {
@@ -361,10 +405,10 @@ Runtime::register_use(use_pending_registration_t* use) {
       assert(*anti_out_related_anti_flow);
       auto anti_out_flow_related = *anti_out_related_anti_flow;
       anti_out_flow_related->get_ready_trigger()->increment_count();
-      anti_out_flow = std::make_shared<AntiFlow>();
-      anti_out_flow->get_ready_trigger()->add_action([anti_out_flow_related] {
-        anti_out_flow_related->get_ready_trigger()->decrement_count();
-      });
+      anti_out_flow = std::make_shared<AntiFlow>(1);
+      anti_out_flow->get_ready_trigger()->attach_decrement_of(
+        anti_out_flow_related->get_ready_trigger()
+      );
       break;
     }
     case FlowRelationship::IndexedFetching : {
@@ -372,20 +416,23 @@ Runtime::register_use(use_pending_registration_t* use) {
       assert(in_rel.related_flow());
       auto coll_token = (*in_rel.related_flow())->parent_collection_token;
       assert(coll_token);
-      anti_out_flow = std::make_shared<AntiFlow>();
+      anti_out_flow = std::make_shared<AntiFlow>(1);
       anti_out_flow->is_index_fetching_antiflow = true;
 
       // TODO this is where we'd need to insert a hook that can break the antidependency cycle in some publish-fetch programs
 
+      auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(
+        (*in_rel.related_flow())->control_block
+      );
       coll_token->current_published_entries.evaluate_at(
         std::make_tuple(
-          use->get_handle()->get_key(), *anti_out_rel.version_key(), anti_out_rel.index()
+          coll_cntrl->handle->get_key(), *anti_out_rel.version_key(), anti_out_rel.index()
         ),
         [anti_out_flow](PublicationTableEntry& entry) {
           assert(entry.entry);
-          anti_out_flow->get_ready_trigger()->add_action([entry_entry=entry.entry]{
-            entry_entry->release_trigger.decrement_count();
-          });
+          anti_out_flow->get_ready_trigger()->attach_decrement_of(
+            entry.entry->release_event
+          );
         }
       );
       break;
@@ -397,8 +444,6 @@ Runtime::register_use(use_pending_registration_t* use) {
   } // end switch over anti-in flow relationship
 
   if(anti_out_flow) {
-    // It's being used as an out, so make it not ready until this is released
-    anti_out_flow->get_ready_trigger()->increment_count();
     use->set_anti_out_flow(anti_out_flow);
   }
 

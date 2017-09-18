@@ -63,7 +63,7 @@ Runtime::publish_use(
 
   assert(details->get_task_collection_token());
 
-  auto pub_handle_key = pub_use->get_handle()->get_key();
+  auto pub_handle_key = pub_use->get_in_flow()->control_block->parent_collection->handle->get_key();
   auto coll_idx = pub_use->get_in_flow()->control_block->collection_index;
 
   details->get_task_collection_token()->current_published_entries.evaluate_at(
@@ -82,7 +82,10 @@ Runtime::publish_use(
 
       // Advance the release trigger so that the data isn't released until
       // all of the fetchers have read it
-      entry.entry->release_trigger.advance_count(details->get_n_fetchers());
+      entry.entry->release_event->advance_count(details->get_n_fetchers());
+      // We now know the actual count of the release event, so remove the initial
+      // count of 1
+      entry.entry->release_event->decrement_count();
 #if COPY_ALL_PUBLISHES
       auto& control_blk = pub_use->get_in_flow()->control_block;
 
@@ -92,7 +95,7 @@ Runtime::publish_use(
       );
 
       auto pub_use_ptr = pub_use.get();
-      pub_use_ptr->get_in_flow()->get_ready_trigger()->add_action([
+      pub_use_ptr->get_in_flow()->get_ready_trigger()->attach_action([
         this, entry, control_blk, pub_use=std::move(pub_use)
       ]{
         // The publish use itself holds the anti-out flow (and thus it's
@@ -112,7 +115,7 @@ Runtime::publish_use(
         // (this may trigger fetching in-flows to reference the underlying data,
         // as is done in release_use(), it is important that we do this *after*
         // the copy completes)
-        entry.entry->fetching_trigger.decrement_count();
+        entry.entry->fetching_join_counter->decrement_count();
 
         // Now we can release the publish use, since we've cleared the
         // antidependency via a copy

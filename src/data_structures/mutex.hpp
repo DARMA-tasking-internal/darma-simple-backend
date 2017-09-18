@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      aliasing_strategy_fwd.hpp
+//                      mutex.hpp
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
@@ -42,41 +42,30 @@
 //@HEADER
 */
 
-#ifndef DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
-#define DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
+#ifndef DARMASIMPLEBACKEND_MUTEX_HPP
+#define DARMASIMPLEBACKEND_MUTEX_HPP
+
+#include <mutex>
+#include <shared_mutex>
 
 namespace simple_backend {
-namespace aliasing {
 
+inline auto shared_lock_in_scope(std::mutex& mtx) {
+  return std::unique_lock<std::mutex>(mtx);
+}
 
-/** @brief CRTP base for aliasing strategies.
- *  Mostly used for specifying the interface.
- */
-template <typename ConcreteT>
-struct AliasingStrategy;
+inline auto shared_lock_in_scope(std::shared_timed_mutex& mtx) {
+  return std::shared_lock<std::shared_timed_mutex>(mtx);
+}
 
+inline auto unique_lock_in_scope(std::mutex& mtx) {
+  return std::unique_lock<std::mutex>(mtx);
+}
 
-/**
- *  Old strategy of adding a decrement action directly to the flow's triggered
- *  action list.  This can quite easily blow the stack in recursive applications
- */
-struct ActionListAppendAliasingStrategy;
+inline auto unique_lock_in_scope(std::shared_timed_mutex& mtx) {
+  return std::unique_lock<std::shared_timed_mutex>(mtx);
+}
 
-
-// Currently disabled because it requires additional complexity in the Flow
-///**
-// *  Takes advantage of a layer of indirection to perform aliasing.
-// *  Currently buggy (probably).
-// */
-//struct MergeableTriggerAliasingStrategy;
-
-/**
- *  Uses the task queue to avoid blowing the stack, but otherwise does basically
- *  the same thing as ActionListAppendAliasingStrategy
- */
-struct WorkQueueAppendAliasingStrategy;
-
-} // end namespace aliasing
 } // end namespace simple_backend
 
-#endif //DARMASIMPLEBACKEND_ALIASING_STRATEGY_FWD_HPP
+#endif //DARMASIMPLEBACKEND_MUTEX_HPP

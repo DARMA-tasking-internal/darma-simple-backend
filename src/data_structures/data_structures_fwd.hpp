@@ -46,6 +46,7 @@
 #define DARMASIMPLEBACKEND_DATA_STRUCTURES_FWD_HPP
 
 #include <mutex>
+#include <shared_mutex>
 
 namespace simple_backend {
 namespace data_structures {
@@ -65,6 +66,17 @@ template <
   typename Allocator=std::allocator<T>
 >
 class SingleLockThreadSafeQueue;
+
+
+template <typename ConcreteT>
+class ThreadSafeUniquePtr;
+
+template <
+  typename T,
+  typename Deleter=std::default_delete<T>,
+  typename Mutex=std::shared_timed_mutex
+>
+class LockBasedThreadSafeUniquePtr;
 
 } // end namespace data_structures
 } // end namespace simple_backend

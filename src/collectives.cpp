@@ -80,18 +80,18 @@ void Runtime::allreduce_use(
       // Do antiflow first, since if it doesn't exist, the use could be deleted
       // by the decrement of the in flow
       if(use_in_out_in_list->get_anti_in_flow()) {
-        use_in_out_in_list->get_anti_in_flow()->get_ready_trigger()->add_action([invocation]{
+        use_in_out_in_list->get_anti_in_flow()->get_ready_trigger()->attach_action([invocation]{
           // This doesn't race with the completion of the invocation because this
           // Use's anti-in flow is responsible for one decrement of the invocation ready
           // trigger, which is done at the end of this lambda
-          invocation->ready_trigger.decrement_count();
+          invocation->ready_event.decrement_count();
         });
       }
       else {
-        invocation->ready_trigger.decrement_count();
+        invocation->ready_event.decrement_count();
       }
 
-      use_in_out_in_list->get_in_flow()->get_ready_trigger()->add_action([
+      use_in_out_in_list->get_in_flow()->get_ready_trigger()->attach_action([
         invocation,
         handle = invocation->input_uses.back()->get_handle(),
         control_block = invocation->input_uses.back()->get_in_flow()->control_block,
@@ -109,10 +109,10 @@ void Runtime::allreduce_use(
         // won't race (at least until ActionLists get parallelized, if ever)
         // TODO this should be something like a when_all_triggers_ready() action or something
         if(invocation->input_uses[0]->get_anti_in_flow()) {
-          invocation->input_uses[0]->get_anti_in_flow()->get_ready_trigger()->add_action(
+          invocation->input_uses[0]->get_anti_in_flow()->get_ready_trigger()->attach_action(
             [invocation, reduce_op, control_block, handle] {
 
-              invocation->input_uses[0]->get_in_flow()->get_ready_trigger()->add_action(
+              invocation->input_uses[0]->get_in_flow()->get_ready_trigger()->attach_action(
                 [invocation, reduce_op, control_block, handle] {
                   auto* in_data = control_block->data;
                   auto nelem = handle->get_array_concept_manager()->n_elements(in_data);
@@ -122,7 +122,7 @@ void Runtime::allreduce_use(
                     in_data, first_use_data, 0, nelem
                   );
 
-                  invocation->ready_trigger.decrement_count();
+                  invocation->ready_event.decrement_count();
                 }
               );
 
@@ -131,7 +131,7 @@ void Runtime::allreduce_use(
         }
         else {
           // frustratingly, I don't see an easy way to do this without copy-and-paste
-          invocation->input_uses[0]->get_in_flow()->get_ready_trigger()->add_action(
+          invocation->input_uses[0]->get_in_flow()->get_ready_trigger()->attach_action(
             [invocation, reduce_op, control_block, handle] {
               auto* in_data = control_block->data;
               auto nelem = handle->get_array_concept_manager()->n_elements(in_data);
@@ -141,7 +141,7 @@ void Runtime::allreduce_use(
                 in_data, first_use_data, 0, nelem
               );
 
-              invocation->ready_trigger.decrement_count();
+              invocation->ready_event.decrement_count();
             }
           );
         }
@@ -159,7 +159,7 @@ void Runtime::allreduce_use(
       // Add the completion of the reduction to the invocation ready trigger
       // This should never do direct descent since, at the very least, the trigger
       // contributions from use_in_out haven't been decremented (which happens below)
-      invocation->ready_trigger.add_action([
+      invocation->ready_event.attach_action([
         invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation),
         this, token, tag
       ]() mutable {
@@ -212,26 +212,26 @@ void Runtime::allreduce_use(
       // We have to do this before the in version for the same reason: the in flow
       // ready trigger could trigger the invocation completion, releasing use_in_out
       if(use_in_out_in_list->get_anti_in_flow()) {
-        use_in_out_in_list->get_anti_in_flow()->get_ready_trigger()->add_action([
+        use_in_out_in_list->get_anti_in_flow()->get_ready_trigger()->attach_action([
           invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation)
         ]{
           auto invocation = invocation_ptr.lock();
           assert(invocation);
-          invocation->ready_trigger.decrement_count();
+          invocation->ready_event.decrement_count();
         });
       }
       else {
-        invocation->ready_trigger.decrement_count();
+        invocation->ready_event.decrement_count();
       }
 
       // Add the decrement of the invocation ready trigger to the ready trigger
       // of the in flow
-      use_in_out_in_list->get_in_flow()->get_ready_trigger()->add_action([
+      use_in_out_in_list->get_in_flow()->get_ready_trigger()->attach_action([
         invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation)
       ]{
         auto invocation = invocation_ptr.lock();
         assert(invocation);
-        invocation->ready_trigger.decrement_count();
+        invocation->ready_event.decrement_count();
       });
 
 
@@ -282,14 +282,14 @@ Runtime::allreduce_use(
 
       // Do antiflow first, since if it doesn't exist, the use could be deleted
       // by the decrement of the in flow
-      use_out_in_list->get_anti_in_flow()->get_ready_trigger()->add_action([invocation]{
+      use_out_in_list->get_anti_in_flow()->get_ready_trigger()->attach_action([invocation]{
         // This doesn't race with the completion of the invocation because this
         // Use's anti-in flow is responsible for one decrement of the invocation ready
         // trigger, which is done at the end of this lambda
-        invocation->ready_trigger.decrement_count();
+        invocation->ready_event.decrement_count();
       });
 
-      use_in_in_list->get_in_flow()->get_ready_trigger()->add_action([
+      use_in_in_list->get_in_flow()->get_ready_trigger()->attach_action([
         invocation,
         handle = invocation->input_uses.back()->get_handle(),
         control_block = invocation->input_uses.back()->get_in_flow()->control_block,
@@ -305,10 +305,10 @@ Runtime::allreduce_use(
         // action list on the first Use's in flow, they will be serialized and thus
         // won't race (at least until ActionLists get parallelized, if ever)
         // TODO this should be something like a when_all_triggers_ready() action or something
-        invocation->output_uses[0]->get_anti_in_flow()->get_ready_trigger()->add_action(
+        invocation->output_uses[0]->get_anti_in_flow()->get_ready_trigger()->attach_action(
           [invocation, reduce_op, control_block, handle] {
 
-            invocation->input_uses[0]->get_in_flow()->get_ready_trigger()->add_action(
+            invocation->input_uses[0]->get_in_flow()->get_ready_trigger()->attach_action(
               [invocation, reduce_op, control_block, handle] {
                 auto* in_data = control_block->data;
                 auto nelem = handle->get_array_concept_manager()->n_elements(in_data);
@@ -324,7 +324,7 @@ Runtime::allreduce_use(
                   in_data, first_use_data, 0, nelem
                 );
 
-                invocation->ready_trigger.decrement_count();
+                invocation->ready_event.decrement_count();
               }
             );
 
@@ -344,7 +344,7 @@ Runtime::allreduce_use(
       // Add the completion of the reduction to the invocation ready trigger
       // This should never do direct descent since, at the very least, the trigger
       // contributions from use_in_out haven't been decremented (which happens below)
-      invocation->ready_trigger.add_action([
+      invocation->ready_event.attach_action([
         invocation_ptr = std::weak_ptr<TaskCollectionToken::CollectiveInvocation>(invocation),
         this, token, tag
       ]() mutable {
@@ -403,8 +403,8 @@ Runtime::allreduce_use(
       auto& use_out_in_list = invocation->output_uses.back();
 
       // TODO finish this!
-//      use_out_in_list->get_anti_in_flow()->get_ready_trigger()->add_action([invocation] {
-//        use_in_in_list->get_in_flow()->get_ready_trigger()->add_action([invocation] {
+//      use_out_in_list->get_anti_in_flow()->get_ready_trigger()->attach_action([invocation] {
+//        use_in_in_list->get_in_flow()->get_ready_trigger()->attach_action([invocation] {
 //          auto* first_use_data = invocation->output_uses[0]->get_in_flow()->control_block->data;
 //          auto ser_man = invocation->output_uses[0]->get_handle()->get_serialization_manager();
 //          auto ser_pol = darma_runtime::abstract::backend::SerializationPolicy();
@@ -430,17 +430,17 @@ Runtime::allreduce_use(
       // of the anti-in flow
       // We have to do this before the in version for the same reason: the in flow
       // ready trigger could trigger the invocation completion, releasing use_in_out
-      use_out_in_list->get_anti_in_flow()->get_ready_trigger()->add_action([invocation] {
-        invocation->ready_trigger.decrement_count();
+      use_out_in_list->get_anti_in_flow()->get_ready_trigger()->attach_action([invocation] {
+        invocation->ready_event.decrement_count();
       });
 
       // Add the decrement of the invocation ready trigger to the ready trigger
       // of the in flow
-      use_in_in_list->get_in_flow()->get_ready_trigger()->add_action([invocation] {
+      use_in_in_list->get_in_flow()->get_ready_trigger()->attach_action([invocation] {
         // Doesn't race with previous because of the lock
         // TODO use deep copy instead here, if it's available
 
-        invocation->ready_trigger.decrement_count();
+        invocation->ready_event.decrement_count();
       });
 
     },
@@ -474,14 +474,14 @@ void Runtime::reduce_collection_use(
   // This is a read, so it should only consume flows and produce anti-flows
   // of the
   darma_runtime::types::flow_t in_coll_in_flow(use_collection_in->get_in_flow());
-  in_coll_in_flow->get_ready_trigger()->add_action([
+  in_coll_in_flow->get_ready_trigger()->attach_action([
     this,
     use_collection_in = std::move(use_collection_in),
     use_out = std::move(use_out),
     reduce_op = details->reduce_operation(), in_coll, in_ctrl_block
   ]() mutable {
     darma_runtime::types::anti_flow_t out_anti_in_flow(use_out->get_anti_in_flow());
-    out_anti_in_flow->get_ready_trigger()->add_action([
+    out_anti_in_flow->get_ready_trigger()->attach_action([
       this,
       use_collection_in = std::move(use_collection_in),
       use_out = std::move(use_out), reduce_op, in_coll, in_ctrl_block

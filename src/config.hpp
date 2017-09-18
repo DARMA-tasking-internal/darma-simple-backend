@@ -45,6 +45,8 @@
 #ifndef DARMASIMPLEBACKEND_CONFIG_HPP
 #define DARMASIMPLEBACKEND_CONFIG_HPP
 
+#include <memory>
+
 #include <data_structures/queue.hpp>
 #include "flow/aliasing_strategy_fwd.hpp"
 
@@ -67,6 +69,9 @@ using aliasing_strategy_t = aliasing::WorkQueueAppendAliasingStrategy;
 
 template <typename... Args>
 using thread_safe_queue_t = data_structures::SingleLockThreadSafeQueue<Args...>;
+
+template <typename T, typename Deleter=std::default_delete<T>>
+using thread_safe_unique_ptr_t = data_structures::LockBasedThreadSafeUniquePtr<T, Deleter>;
 
 } // end namespace types
 

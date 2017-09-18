@@ -49,6 +49,7 @@
 #include <mutex>
 
 #include <darma.h>
+#include <data_structures/join_counter.hpp>
 
 #include "data_structures/concurrent_map.hpp"
 
@@ -76,8 +77,8 @@ struct PublicationTableEntry {
   struct Impl {
     std::shared_ptr<std::shared_ptr<Flow>> source_flow =
       std::make_shared<std::shared_ptr<Flow>>(nullptr);
-    CountdownTrigger<MultiActionList> fetching_trigger = { 1 };
-    CountdownTrigger<MultiActionList> release_trigger = { 0 };
+    std::shared_ptr<JoinCounter> fetching_join_counter = std::make_shared<JoinCounter>(1);
+    std::shared_ptr<JoinCounter> release_event = std::make_shared<JoinCounter>(1);
   };
 
   std::shared_ptr<Impl> entry = { nullptr };

@@ -62,11 +62,11 @@ struct TaskCollectionToken {
   struct CollectiveInvocation {
     CollectiveInvocation(size_t n_contribs)
       : input_uses(),
-        ready_trigger(n_contribs) // in and anti-in for each contribution
+        ready_event(n_contribs) // in and anti-in for each contribution
     {
       input_uses.reserve(n_contribs);
     }
-    CountdownTrigger<SingleAction> ready_trigger;
+    JoinCounter ready_event;
     std::atomic<void*> output_data_ptr = { nullptr }; // only used for the two use case
     std::vector<std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>> input_uses;
     std::vector<std::unique_ptr<darma_runtime::abstract::frontend::DestructibleUse>> output_uses;

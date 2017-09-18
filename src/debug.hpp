@@ -95,6 +95,7 @@ permissions_to_string(darma_runtime::abstract::frontend::Use::permissions_t per)
     _DARMA__perm_case(Read)
     _DARMA__perm_case(Modify)
     _DARMA__perm_case(Write)
+    _DARMA__perm_case(Invalid)
 #undef _DARMA__perm_case
   }
 }
@@ -132,10 +133,10 @@ struct DebugState {
   ) {
     if(flow) {
       o << indent << "at: " << friendly_pointer_name(&(*flow));
-      auto ready = flow->get_ready_trigger()->get_triggered();
+      auto ready = flow->get_ready_trigger()->is_triggered();
       o << " (ready: " << std::boolalpha << ready;
       if(not ready) {
-        o << ", ready trigger count: " << flow->get_ready_trigger()->get_count();
+        o << ", ready trigger count: " << std::dec << flow->get_ready_trigger()->get_count();
       }
       o << ")";
     }
@@ -170,6 +171,13 @@ struct DebugState {
 
     o << std::endl << indent << "  anti_out_flow ";
     print_flow(reg_use->get_anti_out_flow(), "", o);
+
+    o << std::endl << indent << "  is dependency use = "
+      << std::boolalpha << reg_use->is_dependency();
+    o << std::endl << indent << "  is anti-dependency use = "
+      << std::boolalpha << reg_use->is_anti_dependency();
+    o << std::endl << indent << "  manages collection = "
+      << std::boolalpha << reg_use->manages_collection();
   }
 
   static void print_task(
