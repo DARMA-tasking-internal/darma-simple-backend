@@ -48,7 +48,6 @@
 #include <list>
 #include <data_structures/join_counter.hpp>
 
-#include "data_structures/trigger.hpp"
 #include "publish.hpp"
 #include "control_block.hpp"
 #include "task_collection_token.hpp"

@@ -32,6 +32,7 @@ set_darma_compiler_flags()
 
 include_directories(
   ${DARMA_ROOT}/src/include
+  ${DARMA_ROOT}/include   # when given as a install prefix
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_BINARY_DIR}/src
 )

@@ -54,7 +54,6 @@
 #include "data_structures/concurrent_map.hpp"
 
 #include "simple_backend_fwd.hpp"
-#include "data_structures/trigger.hpp"
 
 
 namespace std {

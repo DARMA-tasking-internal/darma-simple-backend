@@ -48,7 +48,6 @@
 #include <shared_mutex>
 #include <atomic>
 
-#include <data_structures/trigger.hpp>
 #include <config.hpp>
 
 //namespace simple_backend {
