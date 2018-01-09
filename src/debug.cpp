@@ -2,9 +2,9 @@
 //@HEADER
 // ************************************************************************
 //
-//                      darma_types.h
+//                      debug.cpp
 //                         DARMA
-//              Copyright (C) 2016 Sandia Corporation
+//              Copyright (C) 2018 Sandia Corporation
 //
 // Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
 // the U.S. Government retains certain rights in this software.
@@ -36,36 +36,15 @@
 // NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// Questions? Contact David S. Hollman (dshollm@sandia.gov)
+// Questions? Contact the DARMA developers (darma-admins@sandia.gov)
 //
 // ************************************************************************
 //@HEADER
 */
 
-#ifndef HPX5_DARMA_TYPES_H
-#define HPX5_DARMA_TYPES_H
 
-#include <memory>
+#include "runtime/runtime.hpp"
+#include "debug.hpp"
 
-#include "simple_backend_fwd.hpp"
-
-#include <darma/impl/key/SSO_key_fwd.h>
-
-namespace darma_runtime {
-namespace types {
-
-using flow_t = std::shared_ptr<simple_backend::Flow>;
-using anti_flow_t = std::shared_ptr<simple_backend::AntiFlow>;
-
-using key_t = detail::SSOKey<>;
-
-using resource_pack_t = int; // not used for now, but not feature-tag protected like it should be
-
-using task_collection_token_t = std::shared_ptr<simple_backend::TaskCollectionToken>;
-
-using runtime_instance_token_t = simple_backend::Runtime*;
-
-} // end namespace types
-} // end namespace darma_runtime
-
-#endif // HPX5_DARMA_TYPES_H
+std::unique_ptr<simple_backend::DebugWorker>
+  simple_backend::DebugWorker::instance = std::make_unique<simple_backend::DebugWorker>();

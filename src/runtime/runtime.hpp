@@ -60,8 +60,6 @@
 
 #include "parse_arguments.hpp"
 
-// TODO this should be included by just including <darma.h> in the future (or there should be a shorter version that can be included...)
-#include <darma/impl/serialization/allocator.impl.h>
 #include <config.hpp>
 
 namespace simple_backend {
@@ -91,12 +89,31 @@ class Runtime
 
     types::aliasing_strategy_t aliasing_strategy_;
 
+    std::vector<std::function<void()>> instance_quiescence_callbacks_;
+
+    static SimpleBackendOptions default_options_;
+
+    void _init_shutdown_counter();
+
+    void _create_workers();
+
   public:
+
+    static void set_default_options(SimpleBackendOptions const& options) {
+      default_options_ = options;
+    }
 
     Runtime(
       task_unique_ptr&& top_level_task,
       SimpleBackendOptions const& options
     );
+
+    // DARMA region version
+    Runtime();
+
+    void register_quiescence_callback(std::function<void()> const& callback) {
+      instance_quiescence_callbacks_.push_back(callback);
+    }
 
     task_t* get_running_task() const override;
 
@@ -135,6 +152,12 @@ class Runtime
       darma_runtime::abstract::frontend::CollectiveDetails const* details,
       darma_runtime::types::key_t const& tag
     ) override;
+
+    void* allocate(
+      size_t n_bytes
+    ) override {
+      return ::operator new(n_bytes);
+    }
 
     void* allocate(
       size_t n_bytes,

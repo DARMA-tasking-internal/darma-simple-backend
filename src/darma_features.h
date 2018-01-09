@@ -65,4 +65,6 @@
 
 #define _darma_has_feature_mark_parallel_tasks 1
 
+#define _darma_has_feature_darma_regions 1
+
 #endif //SIMPLECVBACKEND_DARMA_FEATURES_H

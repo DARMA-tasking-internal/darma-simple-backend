@@ -56,6 +56,8 @@ struct CollectionControlBlock;
 
 struct ReadyOperation;
 
+struct Runtime;
+
 } // end namespace simple_backend
 
 #endif //DARMASIMPLECVBACKEND_SIMPLE_BACKEND_FWD_HPP

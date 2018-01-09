@@ -2,7 +2,7 @@
 //@HEADER
 // ************************************************************************
 //
-//                      darma_types.h
+//                        main.cpp
 //                         DARMA
 //              Copyright (C) 2016 Sandia Corporation
 //
@@ -42,30 +42,67 @@
 //@HEADER
 */
 
-#ifndef HPX5_DARMA_TYPES_H
-#define HPX5_DARMA_TYPES_H
+#if SIMPLE_BACKEND_USE_KOKKOS
+#include <Kokkos_Core.hpp>
+#endif
 
-#include <memory>
+#include "runtime/runtime.hpp"
+#include "debug.hpp"
 
-#include "simple_backend_fwd.hpp"
+#if SIMPLE_BACKEND_DEBUG
 
-#include <darma/impl/key/SSO_key_fwd.h>
+#include <signal.h>
+#include <csignal>
+#include <unistd.h>
+
+extern "C" {
+void sig_usr2_handler(int signal) {
+  simple_backend::DebugWorker::instance->empty_queue_actions.emplace_back(
+    ::simple_backend::make_debug_action_ptr([](auto& state){
+      ::simple_backend::DebugState::print_state(state);
+    })
+  );
+}
+} // end extern "C"
+#endif
+
+int main(int argc, char** argv) {
+
+#if SIMPLE_BACKEND_USE_KOKKOS
+  Kokkos::initialize(argc, argv);
+#endif
+
+#if SIMPLE_BACKEND_DEBUG
+
+  std::cout << "Running program with simple debug backend enabled.  Send signal SIGUSR2"
+    " to process " << std::to_string(getpid()) << " to introspect state." << std::endl;
+  std::signal(SIGUSR2, sig_usr2_handler);
+
+
+  simple_backend::DebugWorker::instance->spawn_work_loop();
+#endif
+
+  simple_backend::Runtime::initialize_top_level_instance(argc, argv);
+  simple_backend::Runtime::instance->spin_up_worker_threads();
+  simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
+
+#if SIMPLE_BACKEND_DEBUG
+  simple_backend::DebugWorker::instance->actions.emplace_back(nullptr);
+  simple_backend::DebugWorker::instance->worker_thread->join();
+#endif
+
+#if SIMPLE_BACKEND_USE_KOKKOS
+  Kokkos::finalize();
+#endif
+
+}
 
 namespace darma_runtime {
-namespace types {
 
-using flow_t = std::shared_ptr<simple_backend::Flow>;
-using anti_flow_t = std::shared_ptr<simple_backend::AntiFlow>;
+void
+abort(std::string const& abort_str) {
+  std::cerr << "Aborting with message: " << abort_str << std::endl;
+  std::abort();
+}
 
-using key_t = detail::SSOKey<>;
-
-using resource_pack_t = int; // not used for now, but not feature-tag protected like it should be
-
-using task_collection_token_t = std::shared_ptr<simple_backend::TaskCollectionToken>;
-
-using runtime_instance_token_t = simple_backend::Runtime*;
-
-} // end namespace types
 } // end namespace darma_runtime
-
-#endif // HPX5_DARMA_TYPES_H

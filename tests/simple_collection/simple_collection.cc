@@ -43,7 +43,6 @@
 */
 
 #include <darma.h>
-#include <darma/impl/task_collection/handle_collection.h>
 #include <darma/impl/task_collection/task_collection.h>
 #include <darma/impl/array/index_range.h>
 #include <assert.h>

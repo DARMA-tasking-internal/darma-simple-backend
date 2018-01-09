@@ -1,2 +1,2 @@
 add_executable(smart_ptr smart_ptr.cc)
-target_link_libraries(smart_ptr darma_simple_backend)
+target_link_libraries(smart_ptr darma_simple_backend darma_simple_backend_main)

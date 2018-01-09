@@ -87,20 +87,6 @@ friendly_pointer_name(void const* ptr) {
 #endif
 }
 
-inline std::string
-permissions_to_string(darma_runtime::abstract::frontend::Use::permissions_t per) {
-  switch(per) {
-#define _DARMA__perm_case(val) case darma_runtime::frontend::Permissions::val: return #val;
-    _DARMA__perm_case(None)
-    _DARMA__perm_case(Read)
-    _DARMA__perm_case(Modify)
-    _DARMA__perm_case(Write)
-    _DARMA__perm_case(_invalid)
-    _DARMA__perm_case(_notGiven)
-#undef _DARMA__perm_case
-  }
-}
-
 struct DebugState {
 
   std::set<darma_runtime::abstract::frontend::Use*> registered_uses;

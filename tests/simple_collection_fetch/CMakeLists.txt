@@ -1,3 +1,3 @@
 add_executable(simple_collection_fetch simple_collection_fetch.cc)
-target_link_libraries(simple_collection_fetch darma_simple_backend)
+target_link_libraries(simple_collection_fetch darma_simple_backend darma_simple_backend_main)
 

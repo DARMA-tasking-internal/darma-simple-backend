@@ -55,6 +55,7 @@
 #endif
 
 #include "runtime.hpp"
+#include "runtime_instance.hpp"
 #include "flow/flow.hpp"
 #include "worker/worker.hpp"
 #include "util.hpp"
@@ -71,6 +72,8 @@
 using namespace simple_backend;
 
 std::unique_ptr<Runtime> Runtime::instance = nullptr;
+
+SimpleBackendOptions Runtime::default_options_ = { };
 
 thread_local
 darma_runtime::abstract::frontend::Task* Runtime::running_task = nullptr;
@@ -114,13 +117,14 @@ Runtime::wait_for_top_level_instance_to_shut_down() {
 
 //==============================================================================
 
-// Construct from a task that is ready to run
-Runtime::Runtime(task_unique_ptr&& top_level_task, SimpleBackendOptions const& options)
-  : nthreads_(options.n_threads), shutdown_counter(1), lookahead_(options.lookahead)
-#if SIMPLE_BACKEND_USE_KOKKOS
-    , n_kokkos_partitions(options.kokkos_partitions)
-#endif
+Runtime::Runtime()
+  : nthreads_(default_options_.n_threads), shutdown_counter(1), lookahead_(default_options_.lookahead)
 {
+  _init_shutdown_counter();
+  _create_workers();
+}
+
+void Runtime::_init_shutdown_counter() {
   shutdown_counter.attach_action([this]{
     for(int i = 0; i < nthreads_; ++i) {
       workers[i].ready_tasks.emplace(
@@ -128,12 +132,27 @@ Runtime::Runtime(task_unique_ptr&& top_level_task, SimpleBackendOptions const& o
       );
     }
   });
+}
 
+void Runtime::_create_workers() {
   // TODO in openmp mode, we may want to do this initialization on the thread that will own the worker (for locality purposes)
   // Create the workers
   for(size_t i = 0; i < nthreads_; ++i) {
     workers.emplace_back(i, nthreads_);
   }
+}
+
+//==============================================================================
+
+// Construct from a task that is ready to run
+Runtime::Runtime(task_unique_ptr&& top_level_task, SimpleBackendOptions const& options)
+  : nthreads_(options.n_threads), shutdown_counter(1), lookahead_(options.lookahead)
+#if SIMPLE_BACKEND_USE_KOKKOS
+    , n_kokkos_partitions(options.kokkos_partitions)
+#endif
+{
+  _init_shutdown_counter();
+  _create_workers();
   workers[0].ready_tasks.emplace(
     std::make_unique<ReadyTaskOperation>(std::move(top_level_task))
   );

@@ -28,7 +28,10 @@ FILE(GLOB flow_sources_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
 FILE(GLOB flow_headers_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/flow/*.hpp"
         )
-set(sources
+FILE(GLOB main_sources_GLOB RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/main/*.cpp"
+        )
+set(library_sources
     ${sources_GLOB}
     ${data_structures_sources_GLOB}
     ${worker_sources_GLOB}
@@ -42,10 +45,17 @@ set(headers
     ${worker_headers_GLOB}
     ${runtime_headers_GLOB}
     ${flow_headers_GLOB}
-        data_structures/data_structures_fwd.hpp pending_operation.hpp ready_operation.hpp ready_operation.cpp flow/aliasing_strategy.cpp data_structures/event.hpp macros.hpp data_structures/pointers.hpp data_structures/mutex.hpp data_structures/join_counter.hpp)
-add_library(darma_simple_backend SHARED ${sources} ${headers})
+    data_structures/data_structures_fwd.hpp pending_operation.hpp ready_operation.hpp ready_operation.cpp flow/aliasing_strategy.cpp data_structures/event.hpp macros.hpp data_structures/pointers.hpp data_structures/mutex.hpp data_structures/join_counter.hpp)
+
+add_library(darma_simple_backend SHARED ${library_sources} ${headers})
+add_library(darma_simple_backend_main SHARED ${main_sources_GLOB})
+
 set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD 14)
 set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD_REQUIRED ON)
+set_property(TARGET darma_simple_backend_main PROPERTY CXX_STANDARD 14)
+set_property(TARGET darma_simple_backend_main PROPERTY CXX_STANDARD_REQUIRED ON)
+target_link_libraries(darma_simple_backend_main darma_simple_backend)
 
 install(TARGETS darma_simple_backend EXPORT DarmaSimpleBackendDepends DESTINATION lib)
+install(TARGETS darma_simple_backend_main EXPORT DarmaSimpleBackendDepends DESTINATION lib)
 install(FILES ${headers} DESTINATION include)
