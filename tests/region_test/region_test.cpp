@@ -47,22 +47,29 @@
 
 using namespace darma;
 using namespace darma::experimental;
+using namespace std::chrono_literals;
 
 int main(int argc, char** argv) {
 
   darma_initialize(argc, argv);
 
   darma_region([]{
-    auto test = initial_access<int>();
+    auto test = initial_access<size_t>();
     create_work([=]{
       test.set_value(0xC0DEFEFE);
-      std::printf("setting value to: %d\n", test.get_value());
+      std::printf("setting value to: %X\n", test.get_value());
     });
     create_work(reads(test), [=]{
-      std::printf("got value: %d\n", test.get_value());
+      std::this_thread::sleep_for(500ms);
+      std::printf("got value: %X\n", test.get_value());
+    });
+    create_work(reads(test), [=]{
+      std::printf("other task got value: %X\n", test.get_value());
     });
   });
 
-  std::printf("Printed after the DARMA region finished");
+  std::printf("Printed after the DARMA region finished\n");
+
+  return 0;
 
 }

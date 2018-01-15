@@ -55,7 +55,7 @@
 #include <memory>
 
 #include <darma/interface/frontend/use.h>
-#include <darma/impl/config.h>
+#include <darma/utility/config.h>
 
 #include "flow/flow.hpp"
 #include "data_structures/concurrent_list.hpp"

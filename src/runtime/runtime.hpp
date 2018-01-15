@@ -79,8 +79,6 @@ class Runtime
 
   private:
 
-    // Maximum concurrency
-    size_t nthreads_;
 #if SIMPLE_BACKEND_USE_KOKKOS
     size_t n_kokkos_partitions;
 #endif
@@ -89,7 +87,6 @@ class Runtime
 
     types::aliasing_strategy_t aliasing_strategy_;
 
-    std::vector<std::function<void()>> instance_quiescence_callbacks_;
 
     static SimpleBackendOptions default_options_;
 
@@ -98,6 +95,7 @@ class Runtime
     void _create_workers();
 
   public:
+
 
     static void set_default_options(SimpleBackendOptions const& options) {
       default_options_ = options;
@@ -155,13 +153,6 @@ class Runtime
 
     void* allocate(
       size_t n_bytes
-    ) override {
-      return ::operator new(n_bytes);
-    }
-
-    void* allocate(
-      size_t n_bytes,
-      darma_runtime::abstract::frontend::MemoryRequirementDetails const&
     ) override {
       return ::operator new(n_bytes);
     }
@@ -243,12 +234,17 @@ class Runtime
     // </editor-fold> end all migration-related functions are implemented, but they just assert }}}2
     //--------------------------------------------------------------------------
 
+    std::vector<std::function<void()>> instance_quiescence_callbacks_;
+
+    // Maximum concurrency
+    size_t nthreads_;
+
     static std::unique_ptr<Runtime> instance;
     static thread_local darma_runtime::abstract::frontend::Task* running_task;
     static thread_local int this_worker_id;
     static thread_local int thread_stack_depth;
     // TODO expose this as a command line option
-    size_t max_task_depth = 100;
+    size_t max_task_depth = 0;
     std::atomic<size_t> pending_tasks = { 0 };
 
     JoinCounter shutdown_counter;

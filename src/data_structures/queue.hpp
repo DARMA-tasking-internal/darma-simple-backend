@@ -214,6 +214,31 @@ class SingleLockThreadSafeQueue
         popped = std::move(val);
       });
     }
+
+    template <typename U, typename ShouldPopCallable, typename DefaultT = std::nullptr_t>
+    inline bool
+    peak_and_pop_if(U& maybe_popped, ShouldPopCallable&& callable, DefaultT default_value = nullptr) {
+      lock_guard_t _lg(*mutex_);
+      if(head_ == nullptr) {
+        return false;
+      }
+
+      std::unique_ptr<value_type> value = nullptr;
+      std::swap(value, head_->value);
+      if(std::forward<ShouldPopCallable>(callable)(value)) {
+        if(tail_ == head_.get()) {
+          tail_ = nullptr;
+        }
+        std::swap(head_, head_->next);
+        maybe_popped = std::move(*value.get());
+        return true;
+      }
+      else {
+        std::swap(value, head_->value);
+        maybe_popped = default_value;
+        return false;
+      }
+    };
 };
 
 } // end namespace data_structures

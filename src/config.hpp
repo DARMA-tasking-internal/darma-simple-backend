@@ -50,7 +50,7 @@
 #include <data_structures/queue.hpp>
 #include "flow/aliasing_strategy_fwd.hpp"
 
-#define SIMPLE_BACKEND_DISABLE_WORK_STEALING 1
+//#define SIMPLE_BACKEND_DISABLE_WORK_STEALING 1
 
 #ifndef SIMPLE_BACKEND_ENABLE_WORK_STEALING
 #  if !SIMPLE_BACKEND_DISABLE_WORK_STEALING

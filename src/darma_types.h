@@ -49,7 +49,7 @@
 
 #include "simple_backend_fwd.hpp"
 
-#include <darma/impl/key/SSO_key_fwd.h>
+#include <darma/key/SSO_key_fwd.h>
 
 namespace darma_runtime {
 namespace types {

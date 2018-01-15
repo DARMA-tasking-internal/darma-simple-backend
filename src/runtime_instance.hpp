@@ -51,8 +51,8 @@
 
 #include "runtime/runtime.hpp"
 
-// TODO remove order dependence of include files here
 #include <darma/interface/app/darma_region.h>
+#include <darma/interface/backend/darma_region.h>
 
 namespace darma_runtime {
 namespace backend {
@@ -76,10 +76,29 @@ with_active_runtime_instance(
   std::function<void()> callback
 ) {
   simple_backend::Runtime::instance = std::unique_ptr<simple_backend::Runtime>(token);
+
+  token->shutdown_counter.attach_action([token]{
+    token->workers[0].ready_tasks.emplace(
+      simple_backend::make_nonstealable_callable_operation([token]{
+        for(int i = 1; i < token->nthreads_; ++i) {
+          token->workers[i].join();
+        }
+      })
+    );
+    for(int i = 0; i < token->nthreads_; ++i) {
+      token->workers[i].ready_tasks.emplace(
+        std::make_unique<simple_backend::SpecialMessage>(simple_backend::ReadyOperation::AllTasksDone)
+      );
+    }
+    for(auto&& cb : token->instance_quiescence_callbacks_) {
+      cb();
+    }
+  });
+
   token = nullptr;
 
   auto top_level_running_task =
-    darma_runtime::frontend::make_running_task_to_return_with_top_level_runtime_instance();
+    darma_runtime::frontend::make_empty_running_task();
   simple_backend::Runtime::instance->running_task = top_level_running_task.get();
 
   callback();
@@ -90,9 +109,7 @@ with_active_runtime_instance(
 
   simple_backend::Runtime::instance->shutdown_counter.decrement_count();
 
-  simple_backend::Runtime::instance-> spin_up_worker_threads();
-
-  simple_backend::Runtime::instance->wait_for_top_level_instance_to_shut_down();
+  simple_backend::Runtime::instance->spin_up_worker_threads();
 
   token = new simple_backend::Runtime();
 }

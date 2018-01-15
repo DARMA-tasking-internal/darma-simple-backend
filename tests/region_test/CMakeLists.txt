@@ -1,2 +1,2 @@
 add_executable(region_test region_test.cpp)
-target_link_libraries(region_test darma_simple_backend darma_simple_backend_main)
+target_link_libraries(region_test darma_simple_backend)

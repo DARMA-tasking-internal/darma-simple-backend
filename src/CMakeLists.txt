@@ -45,7 +45,7 @@ set(headers
     ${worker_headers_GLOB}
     ${runtime_headers_GLOB}
     ${flow_headers_GLOB}
-    data_structures/data_structures_fwd.hpp pending_operation.hpp ready_operation.hpp ready_operation.cpp flow/aliasing_strategy.cpp data_structures/event.hpp macros.hpp data_structures/pointers.hpp data_structures/mutex.hpp data_structures/join_counter.hpp)
+)
 
 add_library(darma_simple_backend SHARED ${library_sources} ${headers})
 add_library(darma_simple_backend_main SHARED ${main_sources_GLOB})

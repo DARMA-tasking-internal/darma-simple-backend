@@ -59,44 +59,30 @@ void Worker::setup_work_stealing() {
 
 }
 
-
 bool Worker::try_to_steal_work() {
 
   auto steal_from = (steal_distribution(steal_generator) + id) % n_threads;
 
-  auto new_ready = Runtime::instance->workers[steal_from].ready_tasks.get_and_pop_back();
+  ready_operation_ptr ready_op = nullptr;
 
-  if(new_ready) {
-    if (new_ready->task.get() == nullptr) {
-      // oops, we stole the termination signal.  Put it back!
-      Runtime::instance->workers[steal_from].ready_tasks.emplace_back(
-        new_ready->message
-      );
-      return false;
+  auto has_ready_op = Runtime::instance->workers[steal_from].ready_tasks.peak_and_pop_if(
+    ready_op, [](auto&& to_be_stolen) {
+      return (*to_be_stolen)->is_stealable();
     }
+  );
 
-    if (new_ready->task->is_data_parallel_task()) {
-      // Don't steal those either; put it back
-      Runtime::instance->workers[steal_from].ready_tasks.emplace_back(
-        std::move(*new_ready)
-      );
-      return false;
-    }
-
-    // Otherwise, we're good to go
-
-    // We're not dorment any more
+  if(has_ready_op) {
     --Runtime::instance->dorment_workers;
 
-    run_task(std::move(new_ready->task));
+    run_operation(ready_op);
 
-    // and we're dorment again
     ++Runtime::instance->dorment_workers;
 
     return true;
   }
-
-  return false;
+  else {
+    return false;
+  }
 }
 
 

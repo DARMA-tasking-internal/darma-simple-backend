@@ -120,7 +120,7 @@ Runtime::wait_for_top_level_instance_to_shut_down() {
 Runtime::Runtime()
   : nthreads_(default_options_.n_threads), shutdown_counter(1), lookahead_(default_options_.lookahead)
 {
-  _init_shutdown_counter();
+  //_init_shutdown_counter();
   _create_workers();
 }
 
