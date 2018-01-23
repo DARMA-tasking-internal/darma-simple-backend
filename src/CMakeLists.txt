@@ -48,7 +48,9 @@ set(headers
 )
 
 add_library(darma_simple_backend SHARED ${library_sources} ${headers})
+target_link_libraries(darma_simple_backend ${CMAKE_THREAD_LIBS_INIT})
 add_library(darma_simple_backend_main SHARED ${main_sources_GLOB})
+target_link_libraries(darma_simple_backend_main ${CMAKE_THREAD_LIBS_INIT})
 
 set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD 14)
 set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD_REQUIRED ON)
