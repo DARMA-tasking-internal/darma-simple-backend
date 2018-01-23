@@ -46,5 +46,9 @@
 #include "runtime/runtime.hpp"
 #include "debug.hpp"
 
+#ifdef SIMPLE_BACKEND_DEBUG
+
 std::unique_ptr<simple_backend::DebugWorker>
   simple_backend::DebugWorker::instance = std::make_unique<simple_backend::DebugWorker>();
+
+#endif
