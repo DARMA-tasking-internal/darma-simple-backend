@@ -61,3 +61,23 @@ target_link_libraries(darma_simple_backend_main darma_simple_backend)
 install(TARGETS darma_simple_backend EXPORT DarmaSimpleBackendDepends DESTINATION lib)
 install(TARGETS darma_simple_backend_main EXPORT DarmaSimpleBackendDepends DESTINATION lib)
 install(FILES ${headers} DESTINATION include)
+
+include (CheckCXXSourceCompiles)
+
+check_cxx_source_compiles("
+#include <shared_mutex>
+int main() {
+  std::shared_timed_mutex mtx;
+}
+"
+  DARMA_SIMPLE_BACKEND_HAS_SHARED_MUTEX
+)
+
+configure_file(
+  config.generated.h.in
+  ${CMAKE_CURRENT_BINARY_DIR}/config.generated.h
+)
+install (
+  FILES ${CMAKE_CURRENT_BINARY_DIR}/config.generated.h
+  DESTINATION src
+)

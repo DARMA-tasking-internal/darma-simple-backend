@@ -188,6 +188,7 @@ Runtime::register_task_collection(task_collection_unique_ptr&& tc) {
     if(dep->manages_collection()) {
       // currently only implemented for modify/modify task collections
       // TODO do this for read only and other stuff.  (probably need something like a UseCollectionToken...)
+      // TODO at least make this work by treating this as a modify dependency
       assert(dep->is_anti_dependency());
 
       dep->get_in_flow()->parent_collection_token = tc_token;

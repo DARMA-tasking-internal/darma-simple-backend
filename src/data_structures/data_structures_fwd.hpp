@@ -45,8 +45,13 @@
 #ifndef DARMASIMPLEBACKEND_DATA_STRUCTURES_FWD_HPP
 #define DARMASIMPLEBACKEND_DATA_STRUCTURES_FWD_HPP
 
+#include "config.hpp"
+
 #include <mutex>
-#include <shared_mutex>
+
+#ifdef DARMA_SIMPLE_BACKEND_HAS_SHARED_MUTEX
+#  include <shared_mutex>
+#endif
 
 namespace simple_backend {
 namespace data_structures {
@@ -74,7 +79,11 @@ class ThreadSafeUniquePtr;
 template <
   typename T,
   typename Deleter=std::default_delete<T>,
+#ifdef DARMA_SIMPLE_BACKEND_HAS_SHARED_MUTEX
   typename Mutex=std::shared_timed_mutex
+#else
+  typename Mutex=std::mutex
+#endif
 >
 class LockBasedThreadSafeUniquePtr;
 

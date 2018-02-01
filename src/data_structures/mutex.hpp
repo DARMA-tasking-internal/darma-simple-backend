@@ -45,8 +45,13 @@
 #ifndef DARMASIMPLEBACKEND_MUTEX_HPP
 #define DARMASIMPLEBACKEND_MUTEX_HPP
 
+#include "config.hpp"
+
 #include <mutex>
-#include <shared_mutex>
+
+#ifdef DARMA_SIMPLE_BACKEND_HAS_SHARED_MUTEX
+#  include <shared_mutex>
+#endif
 
 namespace simple_backend {
 
@@ -54,17 +59,21 @@ inline auto shared_lock_in_scope(std::mutex& mtx) {
   return std::unique_lock<std::mutex>(mtx);
 }
 
-inline auto shared_lock_in_scope(std::shared_timed_mutex& mtx) {
-  return std::shared_lock<std::shared_timed_mutex>(mtx);
-}
-
 inline auto unique_lock_in_scope(std::mutex& mtx) {
   return std::unique_lock<std::mutex>(mtx);
+}
+
+#ifdef DARMA_SIMPLE_BACKEND_HAS_SHARED_MUTEX
+
+inline auto shared_lock_in_scope(std::shared_timed_mutex& mtx) {
+  return std::shared_lock<std::shared_timed_mutex>(mtx);
 }
 
 inline auto unique_lock_in_scope(std::shared_timed_mutex& mtx) {
   return std::unique_lock<std::shared_timed_mutex>(mtx);
 }
+
+#endif
 
 } // end namespace simple_backend
 

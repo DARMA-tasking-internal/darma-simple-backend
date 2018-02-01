@@ -45,6 +45,8 @@
 #ifndef DARMASIMPLEBACKEND_CONFIG_HPP
 #define DARMASIMPLEBACKEND_CONFIG_HPP
 
+#include "config.generated.h"
+
 #include <memory>
 
 #include <data_structures/queue.hpp>
