@@ -55,6 +55,7 @@ namespace simple_backend {
 
 struct ActionBase {
   virtual void run() = 0;
+  virtual ~ActionBase(){}
 };
 
 class Event {

@@ -1,2 +1,2 @@
 add_executable(create_work_if_while create_work_if_while.cpp)
-target_link_libraries(create_work_if_while PUBLIC darma_simple_backend)
+target_link_libraries(create_work_if_while PUBLIC darma_simple_backend darma_simple_backend_main)
