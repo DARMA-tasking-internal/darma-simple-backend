@@ -1,0 +1,11 @@
+The backend must be pointed to an existing frontend installation,
+along with standard prefix/compiler CMake flags. For example,
+
+$ cmake ${source} \
+   -DCMAKE_INSTALL_PREFIX=${backend_prefix} \
+   -DCMAKE_CXX_COMPILER=${cxxcompiler} \
+   -DDARMA_ROOT=${frontend_prefix}
+
+where the configuration points to a DARMA frontend installed
+at the ${frontend_prefix}
+

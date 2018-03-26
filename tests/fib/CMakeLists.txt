@@ -1,2 +1,2 @@
 add_executable(fib fib.cc)
-target_link_libraries(fib darma_simple_backend)
+target_link_libraries(fib darma_simple_backend darma_simple_backend_main)

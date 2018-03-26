@@ -6,7 +6,7 @@
 //                         DARMA
 //              Copyright (C) 2017 Sandia Corporation
 //
-// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+// Under the terms of Contract DE-NA-0003525 with NTESS, LLC,
 // the U.S. Government retains certain rights in this software.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -122,13 +122,13 @@ Runtime::register_use(use_pending_registration_t* use) {
       in_flow->get_ready_trigger()->decrement_count();
       break;
     }
-    case FlowRelationship::PiecewiseCollection : {
-      in_flow = std::make_shared<Flow>(
-        in_rel.related_piecewise_collection_token(),
-        1 // start with a count so we can make it ready immediately
-      );
-      in_flow->get_ready_trigger()->decrement_count();
-    }
+    //case FlowRelationship::PiecewiseCollection : {
+    //  in_flow = std::make_shared<Flow>(
+    //    in_rel.related_piecewise_collection_token(),
+    //    1 // start with a count so we can make it ready immediately
+    //  );
+    //  in_flow->get_ready_trigger()->decrement_count();
+    //}
     case FlowRelationship::IndexedLocal : {
       assert(in_rel.related_flow());
       auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(

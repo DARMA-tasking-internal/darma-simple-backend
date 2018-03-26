@@ -6,7 +6,7 @@
 //                         DARMA
 //              Copyright (C) 2018 Sandia Corporation
 //
-// Under the terms of Contract DE-AC04-94AL85000 with Sandia Corporation,
+// Under the terms of Contract DE-NA-0003525 with NTESS, LLC,
 // the U.S. Government retains certain rights in this software.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -54,17 +54,17 @@ int main(int argc, char** argv) {
   darma_initialize(argc, argv);
 
   darma_region([]{
-    auto test = initial_access<size_t>();
+    auto test = initial_access<int>();
     create_work([=]{
       test.set_value(0xC0DEFEFE);
-      std::printf("setting value to: %X\n", test.get_value());
+      std::printf("setting value to: %d\n", test.get_value());
     });
     create_work(reads(test), [=]{
       std::this_thread::sleep_for(500ms);
-      std::printf("got value: %X\n", test.get_value());
+      std::printf("got value: %d\n", test.get_value());
     });
     create_work(reads(test), [=]{
-      std::printf("other task got value: %X\n", test.get_value());
+      std::printf("other task got value: %d\n", test.get_value());
     });
   });
 
