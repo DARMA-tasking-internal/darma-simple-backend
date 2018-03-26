@@ -179,7 +179,6 @@ class Action : public ActionBase {
 };
 
 
-
 template <typename Callable, typename... Args>
 std::shared_ptr<Event>
 Event::attach_action(
@@ -191,6 +190,7 @@ Event::attach_action(
     std::forward<Args>(args)...
   );
 }
+
 
 template <typename AttachCallable, typename DoCallable, typename... Args>
 std::shared_ptr<Event>
@@ -219,6 +219,21 @@ Event::attach_or_do_action(
   }
   return done_event;
 }
+
+
+class ManuallyTriggeredEvent
+  : public Event
+{
+  public:
+
+    void trigger_event(
+      std::memory_order mem_order = std::memory_order_seq_cst
+    ) {
+      this->make_ready(mem_order);
+    }
+
+};
+
 
 } // end namespace simple_backend
 

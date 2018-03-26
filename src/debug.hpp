@@ -58,7 +58,6 @@
 #include <darma/utility/config.h>
 
 #include "flow/flow.hpp"
-#include "data_structures/concurrent_list.hpp"
 
 namespace simple_backend {
 
@@ -273,8 +272,8 @@ make_debug_action_ptr(Callable&& callable) {
 struct DebugWorker {
 
   std::unique_ptr<std::thread> worker_thread = nullptr;
-  ConcurrentDeque<std::unique_ptr<DebugActionBase>> actions;
-  ConcurrentDeque<std::unique_ptr<DebugActionBase>> empty_queue_actions;
+  types::thread_safe_queue_t<std::unique_ptr<DebugActionBase>> actions;
+  types::thread_safe_queue_t<std::unique_ptr<DebugActionBase>> empty_queue_actions;
 
   DebugState current_state;
 
@@ -289,22 +288,26 @@ struct DebugWorker {
 
   void run_work_loop() {
 
-    while(true) {
-      auto dbg_action = actions.get_and_pop_front();
+    std::unique_ptr<DebugActionBase> dbg_action;
 
-      if(dbg_action) {
-        if(dbg_action->get() == nullptr) { break; }
+    while(true) {
+      bool did_pop = actions.pop(dbg_action);
+
+      if(did_pop) {
+        if(dbg_action.get() == nullptr) { break; }
         else {
-          (*dbg_action)->run(current_state);
+          dbg_action->run(current_state);
+          dbg_action = nullptr;
         }
       }
       else {
         // Run all of the empty queue actions before handling any more debug actions
         // (This allows print actions to run on some semblance of a consistent snapshot)
         while(true) {
-          auto empty_dbg_action = empty_queue_actions.get_and_pop_front();
-          if(empty_dbg_action) {
-            (*empty_dbg_action)->run(current_state);
+          did_pop = empty_queue_actions.pop(dbg_action);
+          if(did_pop) {
+            dbg_action->run(current_state);
+            dbg_action = nullptr;
           }
           else {
             break;
@@ -317,9 +320,10 @@ struct DebugWorker {
 
     // Run through any remaining output actions...
     while(true) {
-      auto empty_dbg_action = empty_queue_actions.get_and_pop_front();
-      if(empty_dbg_action) {
-        (*empty_dbg_action)->run(current_state);
+      bool did_pop = empty_queue_actions.pop(dbg_action);
+      if(did_pop) {
+        dbg_action->run(current_state);
+        dbg_action = nullptr;
       }
       else {
         break;
@@ -344,6 +348,7 @@ struct DebugWorker {
 
 #else
 
+#define _SIMPLE_DBG_ENQUEUE(action...)
 #define _SIMPLE_DBG_DO(action...)
 
 #endif // SIMPLE_BACKEND_DEBUG

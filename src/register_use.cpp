@@ -122,6 +122,13 @@ Runtime::register_use(use_pending_registration_t* use) {
       in_flow->get_ready_trigger()->decrement_count();
       break;
     }
+    case FlowRelationship::PiecewiseCollection : {
+      in_flow = std::make_shared<Flow>(
+        in_rel.related_piecewise_collection_token(),
+        1 // start with a count so we can make it ready immediately
+      );
+      in_flow->get_ready_trigger()->decrement_count();
+    }
     case FlowRelationship::IndexedLocal : {
       assert(in_rel.related_flow());
       auto coll_cntrl = std::static_pointer_cast<CollectionControlBlock>(

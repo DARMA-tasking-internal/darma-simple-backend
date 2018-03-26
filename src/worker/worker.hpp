@@ -52,7 +52,6 @@
 
 #include "config.hpp"
 
-#include "data_structures/concurrent_list.hpp"
 #include "ready_task_holder.hpp"
 #include "ready_operation.hpp"
 
@@ -64,6 +63,11 @@
 namespace simple_backend {
 
 struct Worker {
+  public:
+
+    using task_unique_ptr = darma_runtime::abstract::backend::Runtime::task_unique_ptr;
+    using ready_operation_ptr = std::unique_ptr<ReadyOperation>;
+
   private:
 
 #if !SIMPLE_BACKEND_USE_KOKKOS
@@ -81,12 +85,10 @@ struct Worker {
 
     bool try_to_steal_work();
 
+    types::thread_safe_queue_t<ready_operation_ptr> ready_tasks_;
+    types::thread_safe_queue_t<ready_operation_ptr> ready_tasks_non_stealable_;
+
   public:
-
-    using task_unique_ptr = darma_runtime::abstract::backend::Runtime::task_unique_ptr;
-    using ready_operation_ptr = std::unique_ptr<ReadyOperation>;
-
-    types::thread_safe_queue_t<ready_operation_ptr> ready_tasks;
 
     static constexpr auto NO_WORKER_ID = -1;
 
@@ -124,14 +126,27 @@ struct Worker {
           }
           default: {
             assert(false); // should be unreachable
+            return true; // Something has gone horribly wrong; exit
           }
         }
 
       }
-
     }
 
-    void run_task(task_unique_ptr&& task);
+    template <typename ReadyOperationPtr>
+    void enqueue_ready_operation(ReadyOperationPtr&& op) {
+      if(op->is_stealable()) {
+        ready_tasks_.emplace(
+          std::forward<ReadyOperationPtr>(op)
+        );
+      }
+      else {
+        ready_tasks_non_stealable_.emplace(
+          std::forward<ReadyOperationPtr>(op)
+        );
+      }
+
+    }
 
     void join();
 

@@ -48,42 +48,6 @@
 
 using namespace simple_backend::aliasing;
 
-//void
-//ActionListAppendAliasingStrategy::handle_aliasing_for_released_use(
-//  AliasingStrategy::use_pending_release_t* use
-//) const {
-//
-//  {
-//    auto& out_flow = use->get_out_flow();
-//    out_flow->get_ready_trigger()->increment_count();
-//    use->get_in_flow()->get_ready_trigger()->add_action([out_flow]{
-//      out_flow->get_ready_trigger()->decrement_count();
-//    });
-//  } // end out_flow scope
-//
-//  if(use->get_anti_in_flow()) {
-//    assert(use->get_anti_out_flow());
-//
-//    auto& anti_in_flow = use->get_anti_in_flow();
-//    anti_in_flow->get_ready_trigger()->increment_count();
-//    use->get_anti_out_flow()->get_ready_trigger()->add_action([anti_in_flow]{
-//      anti_in_flow->get_ready_trigger()->decrement_count();
-//    });
-//  }
-//
-//}
-
-//void
-//MergeableTriggerAliasingStrategy::handle_aliasing_for_released_use(
-//  AliasingStrategy::use_pending_release_t* use
-//) const {
-//  use->get_in_flow()->alias_to(use->get_out_flow());
-//  if(use->get_anti_in_flow()) {
-//    assert(use->get_anti_out_flow());
-//    use->get_anti_out_flow()->alias_to(use->get_anti_in_flow());
-//  }
-//}
-
 void
 WorkQueueAppendAliasingStrategy::handle_aliasing_for_released_use(
   use_pending_release_t* use

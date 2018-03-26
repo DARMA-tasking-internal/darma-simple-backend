@@ -65,11 +65,7 @@ bool Worker::try_to_steal_work() {
 
   ready_operation_ptr ready_op = nullptr;
 
-  auto has_ready_op = Runtime::instance->workers[steal_from].ready_tasks.peak_and_pop_if(
-    ready_op, [](auto&& to_be_stolen) {
-      return (*to_be_stolen)->is_stealable();
-    }
-  );
+  auto has_ready_op = Runtime::instance->workers[steal_from].ready_tasks_.pop(ready_op);
 
   if(has_ready_op) {
     --Runtime::instance->dorment_workers;

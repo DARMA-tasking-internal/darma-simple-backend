@@ -57,7 +57,7 @@
 
 extern "C" {
 void sig_usr2_handler(int signal) {
-  simple_backend::DebugWorker::instance->empty_queue_actions.emplace_back(
+  simple_backend::DebugWorker::instance->empty_queue_actions.emplace(
     ::simple_backend::make_debug_action_ptr([](auto& state){
       ::simple_backend::DebugState::print_state(state);
     })
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
   simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
 
 #if SIMPLE_BACKEND_DEBUG
-  simple_backend::DebugWorker::instance->actions.emplace_back(nullptr);
+  simple_backend::DebugWorker::instance->actions.emplace(nullptr);
   simple_backend::DebugWorker::instance->worker_thread->join();
 #endif
 

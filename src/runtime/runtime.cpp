@@ -120,14 +120,14 @@ Runtime::wait_for_top_level_instance_to_shut_down() {
 Runtime::Runtime()
   : nthreads_(default_options_.n_threads), shutdown_counter(1), lookahead_(default_options_.lookahead)
 {
-  //_init_shutdown_counter();
+  _init_shutdown_counter();
   _create_workers();
 }
 
 void Runtime::_init_shutdown_counter() {
   shutdown_counter.attach_action([this]{
     for(int i = 0; i < nthreads_; ++i) {
-      workers[i].ready_tasks.emplace(
+      workers[i].enqueue_ready_operation(
         std::make_unique<SpecialMessage>(ReadyOperation::AllTasksDone)
       );
     }
@@ -153,7 +153,7 @@ Runtime::Runtime(task_unique_ptr&& top_level_task, SimpleBackendOptions const& o
 {
   _init_shutdown_counter();
   _create_workers();
-  workers[0].ready_tasks.emplace(
+  workers[0].enqueue_ready_operation(
     std::make_unique<ReadyTaskOperation>(std::move(top_level_task))
   );
 }
@@ -357,3 +357,69 @@ MemoryManager* get_backend_memory_manager() { return simple_backend::Runtime::in
 } // end namespace backend
 } // end namespace abstract
 } // end namespace darma_runtime
+
+//==============================================================================
+
+namespace darma_runtime {
+
+namespace backend {
+
+
+types::piecewise_collection_token_t
+register_piecewise_collection(
+  types::runtime_context_token_t ctxt,
+  std::shared_ptr<darma_runtime::abstract::frontend::Handle> handle,
+  size_t size
+) {
+  return std::make_shared<simple_backend::CollectionControlBlock>(
+    std::piecewise_construct,
+    handle,
+    size
+  );
+}
+
+void
+register_piecewise_collection_piece(
+  types::runtime_context_token_t,
+  types::piecewise_collection_token_t piece_token,
+  size_t index,
+  char* data,
+  std::function<void(void const*, void*)> copy_out = nullptr,
+  std::function<void(void const*, void*)> copy_in = nullptr
+) {
+  piece_token->piecewise_collection_addresses[index] = data;
+}
+
+bool
+runtime_context_is_active_locally(types::runtime_context_token_t ctxt) {
+  return simple_backend::Runtime::instance.get() == ctxt;
+}
+
+void
+run_distributed_region(
+  types::runtime_context_token_t ctxt,
+  std::function<void()> run_this
+) {
+  assert(not simple_backend::Runtime::instance);
+  simple_backend::Runtime::instance.reset(ctxt);
+  ctxt->workers[0].enqueue_ready_operation(
+    simple_backend::make_nonstealable_callable_operation(run_this)
+  );
+  ctxt->spin_up_worker_threads();
+  Runtime::wait_for_top_level_instance_to_shut_down();
+  simple_backend::Runtime::instance.reset();
+  new (ctxt) simple_backend::Runtime();
+}
+
+types::runtime_context_token_t create_runtime_context(types::mpi_comm_t) {
+  return new simple_backend::Runtime();
+}
+
+void destroy_runtime_context(types::runtime_context_token_t ctxt) {
+  delete ctxt;
+}
+
+} // end namespace backend
+
+} // end namespace darma_runtime
+

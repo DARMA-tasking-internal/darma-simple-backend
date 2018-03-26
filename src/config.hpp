@@ -66,10 +66,12 @@ namespace simple_backend {
 
 namespace types {
 
-//using aliasing_strategy_t = aliasing::ActionListAppendAliasingStrategy;
 using aliasing_strategy_t = aliasing::WorkQueueAppendAliasingStrategy;
 
 template <typename... Args>
+//using thread_safe_queue_t = data_structures::ThreadSafeQueue<
+//  data_structures::SingleLockThreadSafeQueue<Args...>
+//>;
 using thread_safe_queue_t = data_structures::SingleLockThreadSafeQueue<Args...>;
 
 template <typename T, typename Deleter=std::default_delete<T>>

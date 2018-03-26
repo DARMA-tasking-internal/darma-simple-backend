@@ -55,36 +55,6 @@
 
 namespace simple_backend {
 
-//struct AliasableBasicFlow {
-//  private:
-//
-//    std::shared_ptr<MergeableTrigger> ready_trigger_;
-//
-//  public:
-//
-//    explicit
-//    AliasableBasicFlow(size_t initial_count)
-//      : ready_trigger_(std::make_shared<MergeableTrigger>(initial_count))
-//    { }
-//
-//
-//    void alias_to(std::shared_ptr<AliasableBasicFlow> const& other) {
-//      // Note: other cannot be ready upon invocation
-//
-//      // Redirect anyone who still has access to us to instead use other:
-//      auto my_trigger = std::atomic_exchange(&ready_trigger_, other->ready_trigger_);
-//
-//      // Now that the swap has happened, the only calls that will change the count
-//      // or action list are ones that happen through existing aliases to my_trigger
-//      // (or any actions that started before the swap happened and might still be running...)
-//      auto actually_aliased_to = my_trigger->alias_to(std::atomic_load(&other->ready_trigger_));
-//
-//      // and redirect everyone to the new
-//      std::atomic_exchange(&ready_trigger_, actually_aliased_to);
-//    }
-//
-//};
-
 struct BasicFlow {
   private:
 
@@ -124,7 +94,6 @@ struct Flow : public BasicFlow {
 
     // Currently only used with commutative:
     std::mutex commutative_mtx;
-    //ResettableBooleanTrigger<MultiActionList> comm_in_flow_release_trigger;
 
     // Currently only for flow collections, and only valid after the task
     // collection is registered and isn't read-only

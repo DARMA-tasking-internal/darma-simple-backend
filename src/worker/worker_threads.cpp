@@ -51,7 +51,8 @@
 using namespace simple_backend;
 
 Worker::Worker(Worker&& other) noexcept
-  : ready_tasks(std::move(other.ready_tasks)),
+  : ready_tasks_(std::move(other.ready_tasks_)),
+    ready_tasks_non_stealable_(std::move(other.ready_tasks_non_stealable_)),
     id(other.id),
     thread_(std::move(other.thread_)),
     n_threads(other.n_threads)
@@ -69,7 +70,7 @@ void Worker::run_work_loop(int threads_per_partition) {
 
   Runtime::this_worker_id = id;
 
-  // TODO reinstate tracking of "dorment" workers with Kokkow
+  // TODO reinstate tracking of "dorment" workers with Kokkos
   // until we get a real task, we're considered "dorment"
   ++Runtime::instance->dorment_workers;
 
@@ -77,11 +78,12 @@ void Worker::run_work_loop(int threads_per_partition) {
 
   while(true) {
 
-    bool has_ready_op = ready_tasks.pop(ready_op);
-
-    // "Random" version:
-    //auto ready = steal_dis(steal_gen) % 2 == 0 ?
-    //  ready_tasks.get_and_pop_front() : ready_tasks.get_and_pop_back();
+    bool has_ready_op = false;
+    // Prioritize non-stealable tasks (for now, at least)
+    has_ready_op = ready_tasks_non_stealable_.pop(ready_op);
+    if(not has_ready_op) {
+      has_ready_op = ready_tasks_.pop(ready_op);
+    }
 
     // If there are any tasks on the front of our queue, get them
     if(has_ready_op) {
@@ -99,6 +101,9 @@ void Worker::run_work_loop(int threads_per_partition) {
 
     } // end if any ready tasks exist
     else {
+      // Stealable work should never tell us to break, so the returned boolean
+      // tells us whether or not a steal happened. It's irrelevant, so we can
+      // ignore it.
       try_to_steal_work();
     }
 

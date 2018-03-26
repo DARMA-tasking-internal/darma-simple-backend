@@ -97,7 +97,7 @@ struct PendingOperation {
         ready_event_->attach_or_do_action(
           // action to add
           [this](ReadyOperationPtr&& op){
-            Runtime::instance->workers[Runtime::this_worker_id].ready_tasks.emplace(
+            Runtime::instance->workers[Runtime::this_worker_id].enqueue_ready_operation(
               std::forward<ReadyOperationPtr>(op)
             );
             --Runtime::instance->pending_tasks;
@@ -122,7 +122,7 @@ struct PendingOperation {
         ready_event_->attach_action(
           // action to add
           [this](ReadyOperationPtr&& op){
-            Runtime::instance->workers[Runtime::this_worker_id].ready_tasks.emplace(
+            Runtime::instance->workers[Runtime::this_worker_id].enqueue_ready_operation(
               std::forward<ReadyOperationPtr>(op)
             );
             --Runtime::instance->pending_tasks;

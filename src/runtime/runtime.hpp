@@ -53,7 +53,6 @@
 
 #include <darma/interface/backend/runtime.h>
 
-#include "data_structures/concurrent_list.hpp"
 #include <worker/worker.hpp>
 #include <flow/flow.hpp>
 #include <flow/aliasing_strategy.hpp>

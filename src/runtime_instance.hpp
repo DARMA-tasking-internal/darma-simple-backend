@@ -78,7 +78,7 @@ with_active_runtime_instance(
   simple_backend::Runtime::instance = std::unique_ptr<simple_backend::Runtime>(token);
 
   token->shutdown_counter.attach_action([token]{
-    token->workers[0].ready_tasks.emplace(
+    token->workers[0].enqueue_ready_operation(
       simple_backend::make_nonstealable_callable_operation([token]{
         for(int i = 1; i < token->nthreads_; ++i) {
           token->workers[i].join();
@@ -86,7 +86,7 @@ with_active_runtime_instance(
       })
     );
     for(int i = 0; i < token->nthreads_; ++i) {
-      token->workers[i].ready_tasks.emplace(
+      token->workers[i].enqueue_ready_operation(
         std::make_unique<simple_backend::SpecialMessage>(simple_backend::ReadyOperation::AllTasksDone)
       );
     }
@@ -110,6 +110,7 @@ with_active_runtime_instance(
   simple_backend::Runtime::instance->shutdown_counter.decrement_count();
 
   simple_backend::Runtime::instance->spin_up_worker_threads();
+  simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
 
   token = new simple_backend::Runtime();
 }

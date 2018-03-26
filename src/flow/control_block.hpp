@@ -131,9 +131,28 @@ struct CollectionControlBlock : ControlBlock {
     }
   }
 
+  CollectionControlBlock(
+    std::piecewise_construct_t,
+    std::shared_ptr<darma_runtime::abstract::frontend::Handle const> in_handle,
+    std::size_t n_idxs
+  ) : ControlBlock(in_handle, n_idxs),
+      n_indices(n_idxs),
+      is_piecewise_collection(true)
+  {
+    piecewise_collection_addresses.resize(n_idxs);
+    // We never even need to invoke the callbacks, because we're never going
+    // to move the data
+    owns_data = false;
+  }
+
   void* data_for_index(size_t index) {
-    return static_cast<char*>(data)
-      + index * handle->get_serialization_manager()->get_metadata_size();
+    if(not is_piecewise_collection) {
+      return static_cast<char*>(data)
+        + index * handle->get_serialization_manager()->get_metadata_size();
+    }
+    else {
+      return piecewise_collection_addresses[index];
+    }
   }
 
   virtual ~CollectionControlBlock() {
@@ -149,6 +168,8 @@ struct CollectionControlBlock : ControlBlock {
   }
 
   size_t n_indices;
+  bool is_piecewise_collection = false;
+  std::vector<char*> piecewise_collection_addresses;
 
 };
 

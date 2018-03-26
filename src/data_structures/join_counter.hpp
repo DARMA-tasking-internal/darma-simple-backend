@@ -68,8 +68,10 @@ class JoinCounter
     }
 
     inline void
-    increment_count(std::memory_order mem_order = std::memory_order_seq_cst) {
-      advance_count(1);
+    increment_count(
+      std::memory_order mem_order = std::memory_order_seq_cst
+    ) {
+      advance_count(1, mem_order);
     }
 
     inline void
@@ -109,19 +111,6 @@ class JoinCounter
     }
 };
 
-
-class ManuallyTriggeredEvent
-  : public Event
-{
-  public:
-
-    void trigger_event(
-      std::memory_order mem_order = std::memory_order_seq_cst
-    ) {
-      this->make_ready(mem_order);
-    }
-
-};
 
 } // end namespace simple_backend
 
