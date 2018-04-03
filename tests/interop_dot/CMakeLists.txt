@@ -1,0 +1,2 @@
+add_executable(interop_dot interop_dot.cpp)
+target_link_libraries(interop_dot darma_simple_backend)

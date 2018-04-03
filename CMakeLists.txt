@@ -87,8 +87,21 @@ else()
   add_subdirectory(tests)
 endif()
 
+if(EXISTS ${DARMA_ROOT}/include)
+  target_include_directories(darma_simple_backend
+    PUBLIC
+    ${DARMA_ROOT}/include   # when given as a install prefix
+  )
+endif()
 
-export ( TARGETS darma_simple_backend
+if(EXISTS ${DARMA_ROOT}/src/include)
+    target_include_directories(darma_simple_backend
+      PUBLIC
+      ${DARMA_ROOT}/src/include   # when given as not an install prefix
+      )
+endif()
+
+export ( TARGETS darma_simple_backend_main darma_simple_backend
   FILE "${PROJECT_BINARY_DIR}/DarmaSimpleBackendDepends.cmake"
 )
 export ( PACKAGE darma_simple_backend )
@@ -105,6 +118,7 @@ install (FILES
   "${PROJECT_BINARY_DIR}/DarmaSimpleBackendConfig.cmake"
   "${PROJECT_BINARY_DIR}/DarmaSimpleBackendConfigVersion.cmake"
   DESTINATION cmake COMPONENT dev)
+
 
 install (EXPORT DarmaSimpleBackendDepends DESTINATION cmake COMPONENT dev)
 

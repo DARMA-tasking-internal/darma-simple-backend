@@ -67,4 +67,6 @@
 
 #define _darma_has_feature_darma_regions 1
 
+#define _darma_has_feature_mpi_interop 0
+
 #endif //SIMPLECVBACKEND_DARMA_FEATURES_H

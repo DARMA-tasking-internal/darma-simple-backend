@@ -24,5 +24,6 @@ SET (DARMA_BACKEND_CXX_FLAGS "@CMAKE_CXX_FLAGS@")
 INCLUDE ("${DARMA_BACKEND_CMAKE_DIR}/DarmaSimpleBackendDepends.cmake")
  
 # These are IMPORTED targets created by DarmaSimpleBackendDepends.cmake
-SET (DARMA_BACKEND_LIBRARIES darma_simple_backend @CMAKE_SIMPLE_LIBS_INIT@)
+SET (DARMA_BACKEND_LIBRARIES darma_simple_backend darma_simple_backend_main @CMAKE_SIMPLE_LIBS_INIT@)
+SET (DARMA_BACKEND_LIBRARIES_NOMAIN darma_simple_backend @CMAKE_SIMPLE_LIBS_INIT@)
 
