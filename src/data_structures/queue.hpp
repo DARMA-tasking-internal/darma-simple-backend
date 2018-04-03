@@ -154,6 +154,16 @@ class SingleLockThreadSafeQueue
       : mutex_(std::make_unique<Mutex>())
     { }
 
+    SingleLockThreadSafeQueue(SingleLockThreadSafeQueue&& other)
+      : mutex_(std::move(other.mutex_)),
+        head_(std::move(other.head_)),
+        tail_(other.tail_)
+    {
+      other.head_ = nullptr;
+      other.tail_ = nullptr;
+      other.mutex_ = nullptr;
+    }
+
     template <typename... Args>
     bool
     emplace(Args&&... args) {
@@ -239,6 +249,17 @@ class SingleLockThreadSafeQueue
         return false;
       }
     };
+
+    ~SingleLockThreadSafeQueue() {
+      if(mutex_) {
+        lock_guard_t _lg(*mutex_);
+        // Should trigger all destructors:
+        head_ = nullptr;
+      }
+      else {
+        assert(!head_);
+      }
+    }
 };
 
 } // end namespace data_structures

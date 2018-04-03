@@ -180,14 +180,16 @@ Runtime::register_use(use_pending_registration_t* use) {
 
       break;
     }
-    case FlowRelationship::Forwarding : {
+    case FlowRelationship::Forwarding :
+    case FlowRelationship::ForwardingCollection : {
       assert(in_rel.related_flow());
       // This should just work the same way as Same
       in_flow = *in_rel.related_flow();
       break;
     }
     default : {
-      assert(false); // not implemented description
+      std::cerr << "FlowRelationship case not handled for in flow: " << in_rel.description() << std::endl;
+      std::abort();
     }
   } // end switch over in flow relationship
 

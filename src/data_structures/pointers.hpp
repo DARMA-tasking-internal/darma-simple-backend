@@ -155,6 +155,11 @@ class LockBasedThreadSafeUniquePtr
       other.mutex_.unlock();
     }
 
+    ~LockBasedThreadSafeUniquePtr() {
+      auto _lg = unique_lock_in_scope(mutex_);
+      value_ = nullptr;
+    }
+
   private:
 
     unique_ptr_type

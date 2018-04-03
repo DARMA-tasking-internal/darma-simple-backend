@@ -105,6 +105,12 @@ class Event {
     // Doesn't even need to be movable for now:
     Event(Event&&) = delete;
 
+    ~Event() {
+      if(triggered_.load()) {
+        _do_actions();
+      }
+    }
+
   protected:
 
     Event()
@@ -185,11 +191,30 @@ std::shared_ptr<Event>
 Event::attach_action(
   Callable&& callable, Args&& ... args
 ) {
-  return attach_or_do_action(
-    std::forward<Callable>(callable),
-    std::forward<Callable>(callable),
-    std::forward<Args>(args)...
-  );
+  auto done_event = std::make_shared<ActionCompletedEvent>();
+  if(triggered_.load()) {
+    _do_actions(); // just in case there are other actions that need to be flushed
+    std::forward<Callable>(callable)(std::forward<Args&&>(args)...);
+    done_event->_action_finished();
+    // Since the attached action could delete this it is unsafe to do *anything*
+    // here except use stack values and/or return
+  }
+  else {
+    action_queue_ptr_.with_shared_access(
+      [&](action_queue_t* queue) {
+        queue->emplace(std::make_unique<Action<Callable, std::decay_t<Args>...>>(
+          done_event,
+          std::forward<Callable>(callable),
+          std::forward<Args>(args)...
+        ));
+      }
+    );
+    // Since the attached action could delete this, and since a decrement could
+    // race with anything we put here, it is unsafe to do *anything* here except
+    // use stack values and/or return.  Any extra _do_actions() calls that need
+    // to be made can be done in the destructor or upon any other calls to attach
+  }
+  return done_event;
 }
 
 
@@ -200,8 +225,11 @@ Event::attach_or_do_action(
 ) {
   auto done_event = std::make_shared<ActionCompletedEvent>();
   if(triggered_.load()) {
+    _do_actions(); // just in case there are other actions that need to be flushed
     std::forward<DoCallable>(do_callable)(std::forward<Args&&>(args)...);
     done_event->_action_finished();
+    // Since the attached action could delete this it is unsafe to do *anything*
+    // here except use stack values and/or return
   }
   else {
     action_queue_ptr_.with_shared_access(
@@ -213,10 +241,10 @@ Event::attach_or_do_action(
         ));
       }
     );
-
-    if(triggered_.load()) {
-      _do_actions();
-    }
+    // Since the attached action could delete this, and since a decrement could
+    // race with anything we put here, it is unsafe to do *anything* here except
+    // use stack values and/or return.  Any extra _do_actions() calls that need
+    // to be made can be done in the destructor or upon any other calls to attach
   }
   return done_event;
 }
