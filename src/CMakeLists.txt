@@ -47,20 +47,22 @@ set(headers
     ${flow_headers_GLOB}
 )
 
-add_library(darma_simple_backend SHARED ${library_sources} ${headers})
-target_link_libraries(darma_simple_backend ${CMAKE_THREAD_LIBS_INIT})
-add_library(darma_simple_backend_main SHARED ${main_sources_GLOB})
-target_link_libraries(darma_simple_backend_main ${CMAKE_THREAD_LIBS_INIT})
 
-set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD 14)
-set_property(TARGET darma_simple_backend PROPERTY CXX_STANDARD_REQUIRED ON)
-set_property(TARGET darma_simple_backend_main PROPERTY CXX_STANDARD 14)
-set_property(TARGET darma_simple_backend_main PROPERTY CXX_STANDARD_REQUIRED ON)
-target_link_libraries(darma_simple_backend_main darma_simple_backend)
+add_library(darma_interop SHARED ${library_sources} ${headers})
+target_link_libraries(darma_interop ${CMAKE_THREAD_LIBS_INIT} darma_frontend)
 
-install(TARGETS darma_simple_backend EXPORT DarmaSimpleBackendDepends DESTINATION lib)
-install(TARGETS darma_simple_backend_main EXPORT DarmaSimpleBackendDepends DESTINATION lib)
+add_library(darma SHARED ${main_sources_GLOB})
+target_link_libraries(darma darma_interop)
+
+set_property(TARGET darma_interop PROPERTY CXX_STANDARD 14)
+set_property(TARGET darma_interop PROPERTY CXX_STANDARD_REQUIRED ON)
+set_property(TARGET darma PROPERTY CXX_STANDARD 14)
+set_property(TARGET darma PROPERTY CXX_STANDARD_REQUIRED ON)
+
 install(FILES ${headers} DESTINATION include)
+
+install(TARGETS darma EXPORT darma DESTINATION lib)
+install(TARGETS darma_interop EXPORT darma_interop DESTINATION lib)
 
 include (CheckCXXSourceCompiles)
 
@@ -81,3 +83,5 @@ install (
   FILES ${CMAKE_CURRENT_BINARY_DIR}/config.generated.h
   DESTINATION src
 )
+
+

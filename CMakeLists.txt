@@ -3,6 +3,12 @@ cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
 
 project (DarmaSimpleBackend CXX)
 
+option(darma_frontend_DIR "Root for DARMA frontend installation" OFF)
+if (NOT darma_frontend_DIR)
+message(FATAL_ERROR "Must specify valid DARMA frontend installation root with -Ddarma_frontend_DIR=")
+endif()
+find_package(darma_frontend PATHS ${darma_frontend_DIR}/cmake)
+
 # module include path
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
@@ -19,20 +25,10 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g")
 
 set (CMAKE_MACOSX_RPATH On)
 
-if (NOT DEFINED DARMA_ROOT)
-  set(DARMA_ROOT $ENV{DARMA_ROOT})
-endif()
-
-if (NOT DARMA_ROOT)
-  message(FATAL_ERROR "Need DARMA_ROOT to be defined")
-endif()
-
 include(cmake/SetDarmaCompilerFlags.cmake)
 set_darma_compiler_flags()
 
 include_directories(
-  ${DARMA_ROOT}/src/include
-  ${DARMA_ROOT}/include   # when given as a install prefix
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_BINARY_DIR}/src
 )
@@ -87,41 +83,6 @@ else()
   add_subdirectory(tests)
 endif()
 
-if(EXISTS ${DARMA_ROOT}/include)
-  target_include_directories(darma_simple_backend
-    PUBLIC
-    ${DARMA_ROOT}/include   # when given as a install prefix
-  )
-endif()
-
-if(EXISTS ${DARMA_ROOT}/src/include)
-    target_include_directories(darma_simple_backend
-      PUBLIC
-      ${DARMA_ROOT}/src/include   # when given as not an install prefix
-      )
-endif()
-
-export ( TARGETS darma_simple_backend_main darma_simple_backend
-  FILE "${PROJECT_BINARY_DIR}/DarmaSimpleBackendDepends.cmake"
-)
-export ( PACKAGE darma_simple_backend )
-
-
-configure_file (cmake/DarmaSimpleBackendConfig.cmake.in
-  "${PROJECT_BINARY_DIR}/DarmaSimpleBackendConfig.cmake" @ONLY)
-configure_file (cmake/DarmaSimpleBackendConfigVersion.cmake.in
-  "${PROJECT_BINARY_DIR}/DarmaSimpleBackendConfigVersion.cmake" @ONLY)
-
-# Install DarmaSimpleBackendConfig.cmake and
-# DarmaSimpleBackendConfigVersion.cmake
-install (FILES
-  "${PROJECT_BINARY_DIR}/DarmaSimpleBackendConfig.cmake"
-  "${PROJECT_BINARY_DIR}/DarmaSimpleBackendConfigVersion.cmake"
-  DESTINATION cmake COMPONENT dev)
-
-
-install (EXPORT DarmaSimpleBackendDepends DESTINATION cmake COMPONENT dev)
-
 if(BACKEND_USE_KOKKOS)
     if(BACKEND_USE_FCONTEXT)
         message(STATUS "Will link to fcontext library at ${FCONTEXT_ROOT}/lib")
@@ -133,3 +94,33 @@ if(BACKEND_USE_KOKKOS)
             LINK_FLAGS "${KOKKOS_LIBS} ${KOKKOS_LDFLAGS}")
     endif()
 endif()
+
+target_include_directories(darma PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  $<INSTALL_INTERFACE:include>  # <prefix>/include/
+)
+
+install(
+  EXPORT darma
+  DESTINATION cmake 
+)
+install(
+  EXPORT darma_interop
+  DESTINATION cmake 
+)
+
+set(DARMA_BACKEND_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+set(DARMA_BACKEND_CXX_COMPILER "${CMAKE_CXX_COMPILER}")
+
+configure_file(
+  cmake/darmaConfig.cmake.in
+  "${PROJECT_BINARY_DIR}/darmaConfig.cmake" @ONLY
+)
+
+install(
+  FILES
+  "${PROJECT_BINARY_DIR}/darmaConfig.cmake" 
+  COMPONENT dev
+  DESTINATION cmake
+)
+
