@@ -46,6 +46,7 @@
 #include <Kokkos_Core.hpp>
 #endif
 
+#include "config.hpp"
 #include "runtime/runtime.hpp"
 #include "debug.hpp"
 
@@ -54,6 +55,7 @@
 #include <signal.h>
 #include <csignal>
 #include <unistd.h>
+
 
 extern "C" {
 void sig_usr2_handler(int signal) {
@@ -66,7 +68,20 @@ void sig_usr2_handler(int signal) {
 } // end extern "C"
 #endif
 
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+#include <cds/init.h>
+#include <cds/gc/hp.h>
+#endif
+
 int main(int argc, char** argv) {
+
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+  cds::Initialize();
+  { // start scope for hazard pointer garbage collection singleton
+  cds::gc::HP hp_gc_;
+  // attach the main thread to the cds threading manager
+  cds::threading::Manager::attachThread();
+#endif
 
 #if SIMPLE_BACKEND_USE_KOKKOS
   Kokkos::initialize(argc, argv);
@@ -93,6 +108,11 @@ int main(int argc, char** argv) {
 
 #if SIMPLE_BACKEND_USE_KOKKOS
   Kokkos::finalize();
+#endif
+
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+  } // end of start scope for hazard pointer garbage collection singleton
+  cds::Terminate();
 #endif
 
 }

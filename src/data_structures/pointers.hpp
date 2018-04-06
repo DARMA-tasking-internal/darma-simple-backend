@@ -54,8 +54,6 @@
 namespace simple_backend {
 namespace data_structures {
 
-
-
 template <typename ConcreteT>
 class ThreadSafeUniquePtr {
 
@@ -77,16 +75,7 @@ class ThreadSafeUniquePtr {
       );
     }
 
-    template <typename Callable>
-    auto with_exclusive_access(Callable&& callable) {
-      return static_cast<ConcreteT*>(this)->_with_exclusive_access_impl(
-        std::forward<Callable>(callable)
-      );
-    }
-
-
 };
-
 
 namespace _impl {
 
@@ -103,7 +92,6 @@ struct lock_other_mutex_helper {
 };
 
 } // end namespace _impl
-
 
 template <
   typename T,
@@ -176,16 +164,7 @@ class LockBasedThreadSafeUniquePtr
       return std::forward<Callable>(callable)(value_.get());
     }
 
-    template <typename Callable>
-    auto
-    _with_exclusive_access_impl(Callable&& callable) {
-      auto _lg = unique_lock_in_scope(mutex_);
-      return std::forward<Callable>(callable)(value_.get());
-    }
-
 };
-
-
 
 } // end namespace data_structures
 } // end namespace simple_backend

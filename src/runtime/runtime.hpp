@@ -249,6 +249,19 @@ class Runtime
     JoinCounter shutdown_counter;
     std::atomic<size_t> dorment_workers = { 0 };
 
+    using piecewise_handle_map_t = std::unordered_map<
+      darma_runtime::types::key_t,
+      darma_runtime::types::piecewise_collection_token_t
+    >;
+    using persistent_handle_map_t = std::unordered_map<
+      darma_runtime::types::key_t,
+      darma_runtime::types::persistent_collection_token_t
+    >;
+    piecewise_handle_map_t piecewise_handles;
+    persistent_handle_map_t persistent_handles;
+    std::unique_ptr<darma_runtime::abstract::frontend::Task> distributed_region_running_task = nullptr;
+
+
     #if SIMPLE_BACKEND_USE_KOKKOS
     std::vector<std::unique_ptr<types::thread_safe_queue_t<ReadyOperation*>>> ready_kokkos_tasks;
     #endif

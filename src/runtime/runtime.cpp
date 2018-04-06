@@ -371,11 +371,27 @@ register_piecewise_collection(
   std::shared_ptr<darma_runtime::abstract::frontend::Handle> handle,
   size_t size
 ) {
-  return std::make_shared<simple_backend::CollectionControlBlock>(
+  auto rv = std::make_shared<simple_backend::CollectionControlBlock>(
     std::piecewise_construct,
     handle,
     size
   );
+  ctxt->piecewise_handles[handle->get_key()] = rv;
+  return rv;
+}
+
+types::persistent_collection_token_t
+register_persistent_collection(
+  types::runtime_context_token_t ctxt,
+  std::shared_ptr<darma_runtime::abstract::frontend::Handle> handle,
+  size_t size
+) {
+  auto rv = std::make_shared<simple_backend::CollectionControlBlock>(
+    handle,
+    size
+  );
+  ctxt->persistent_handles[handle->get_key()] = rv;
+  return rv;
 }
 
 void
@@ -383,11 +399,11 @@ register_piecewise_collection_piece(
   types::runtime_context_token_t,
   types::piecewise_collection_token_t piece_token,
   size_t index,
-  char* data,
+  void* data,
   std::function<void(void const*, void*)> copy_out = nullptr,
   std::function<void(void const*, void*)> copy_in = nullptr
 ) {
-  piece_token->piecewise_collection_addresses[index] = data;
+  piece_token->piecewise_collection_addresses[index] = reinterpret_cast<char*>(data);
 }
 
 bool
@@ -402,16 +418,34 @@ run_distributed_region(
 ) {
   assert(not simple_backend::Runtime::instance);
   simple_backend::Runtime::instance.reset(ctxt);
+
+  simple_backend::Runtime::instance->distributed_region_running_task =
+    darma_runtime::frontend::make_empty_running_task();
+  simple_backend::Runtime::instance->running_task =
+    simple_backend::Runtime::instance->distributed_region_running_task.get();
+
   ctxt->workers[0].enqueue_ready_operation(
     simple_backend::make_nonstealable_callable_operation(run_this)
   );
+  ctxt->workers[0].enqueue_ready_operation(
+    simple_backend::make_nonstealable_callable_operation([ctxt]{
+      ctxt->shutdown_counter.decrement_count();
+    })
+  );
+
   ctxt->spin_up_worker_threads();
   Runtime::wait_for_top_level_instance_to_shut_down();
   simple_backend::Runtime::instance.reset();
+  std::atomic_thread_fence(std::memory_order_seq_cst);
   new (ctxt) simple_backend::Runtime();
 }
 
-types::runtime_context_token_t create_runtime_context(types::mpi_comm_t) {
+void
+run_distributed_region_worker(types::runtime_context_token_t ctxt) {
+  assert(false);
+}
+
+types::runtime_context_token_t create_runtime_context(types::MPI_Comm) {
   return new simple_backend::Runtime();
 }
 

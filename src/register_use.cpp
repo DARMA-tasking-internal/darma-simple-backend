@@ -110,14 +110,30 @@ Runtime::register_use(use_pending_registration_t* use) {
     }
     case FlowRelationship::InitialCollection : {
       assert(in_rel.related_flow() == nullptr);
-      in_flow = std::make_shared<Flow>(
-        std::make_shared<CollectionControlBlock>(
+      std::shared_ptr<CollectionControlBlock> ctrl_blk;
+      auto found = persistent_handles.find(use->get_handle()->get_key());
+      if(found != persistent_handles.end()) {
+        ctrl_blk = found->second;
+      }
+      else {
+        ctrl_blk = std::make_shared<CollectionControlBlock>(
           use->get_handle(),
           darma_runtime::abstract::frontend::use_cast<
             darma_runtime::abstract::frontend::CollectionManagingUse*
           >(use)->get_managed_collection()->size()
-        ),
+        );
+      }
+      in_flow = std::make_shared<Flow>(
+        ctrl_blk,
         1 // start with a count so we can make it ready immediately
+      );
+      in_flow->get_ready_trigger()->decrement_count();
+      break;
+    }
+    case FlowRelationship::ImportedCollection : {
+      in_flow = std::make_shared<Flow>(
+        piecewise_handles[use->get_handle()->get_key()],
+        1
       );
       in_flow->get_ready_trigger()->decrement_count();
       break;
@@ -288,7 +304,8 @@ Runtime::register_use(use_pending_registration_t* use) {
     }
     default : {
       // None of the other cases should be used for now
-      assert(false); // not implemented description
+      std::cerr << "FlowRelationship case not handled for anti-in flow: " << anti_in_rel.description() << std::endl;
+      std::abort();
     }
   } // end switch over anti-in flow relationship
 
@@ -355,8 +372,8 @@ Runtime::register_use(use_pending_registration_t* use) {
       break;
     }
     default : {
-      // None of the others should be used for now
-      assert(false); // not implemented description
+      std::cerr << "FlowRelationship case not handled for out flow: " << out_rel.description() << std::endl;
+      std::abort();
     }
   } // end switch over in flow relationship
 
@@ -389,7 +406,8 @@ Runtime::register_use(use_pending_registration_t* use) {
       break;
     }
     case FlowRelationship::Initial :
-    case FlowRelationship::InitialCollection : {
+    case FlowRelationship::InitialCollection :
+    case FlowRelationship::ImportedCollection : {
       anti_out_flow = std::make_shared<AntiFlow>(1);
       break;
     }
@@ -447,8 +465,8 @@ Runtime::register_use(use_pending_registration_t* use) {
       break;
     }
     default : {
-      // None of the others should be used for now
-      assert(false); // not implemented description
+      std::cerr << "FlowRelationship case not handled for anti-out flow: " << anti_out_rel.description() << std::endl;
+      std::abort();
     }
   } // end switch over anti-in flow relationship
 

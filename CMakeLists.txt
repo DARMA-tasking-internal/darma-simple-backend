@@ -45,6 +45,8 @@ option(BACKEND_USE_KOKKOS "Whether or not to use Kokkos to back the simple backe
 option(BACKEND_USE_FCONTEXT "Whether or not to use fcontext to back the simple backend with Kokkos." Off)
 option(KOKKOS_PATH "Path to Kokkos installation (only used for BACKEND_USE_KOKKOS)" "")
 option(FCONTEXT_ROOT "Path to fcontext (boost) installation (only used for BACKEND_USE_FCONTEXT)" "")
+option(SIMPLE_BACKEND_USE_LIBCDS "Whether or not to use LibCDS, if available, for concurrent data structures" OFF)
+
 
 if(ENABLE_BACKEND_DEBUGGING)
     add_definitions(-DSIMPLE_BACKEND_DEBUG)

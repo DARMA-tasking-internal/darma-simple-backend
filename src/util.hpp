@@ -197,6 +197,30 @@ try_lock(InputIterator1 begin_lockables, InputIterator2 const& end_lockables) {
   }
 }
 
+template <typename Callable>
+struct on_destruction_invoker {
+  private:
+    Callable callable_;
+  public:
+    explicit on_destruction_invoker(Callable&& c)
+      : callable_(std::forward<Callable>(c))
+    { }
+
+    on_destruction_invoker() = delete;
+    on_destruction_invoker(on_destruction_invoker const&) = delete;
+    on_destruction_invoker(on_destruction_invoker&&) = default;
+    on_destruction_invoker& operator=(on_destruction_invoker&&) = delete;
+
+    ~on_destruction_invoker() {
+      callable_();
+    }
+};
+
+template <typename Callable>
+auto make_on_destruction_invoker(Callable&& c) {
+  return on_destruction_invoker<Callable>(std::forward<Callable>(c));
+}
+
 } // end namespace simple_backend
 
 #endif //DARMASIMPLECVBACKEND_UTIL_HPP

@@ -100,7 +100,7 @@ struct Worker {
       setup_work_stealing();
     }
 
-    Worker(Worker&& other) noexcept;
+    Worker(Worker&& other);
 
     Worker(Worker const&) = delete;
     Worker& operator=(Worker const&) = delete;

@@ -44,13 +44,21 @@
 
 #if !SIMPLE_BACKEND_USE_KOKKOS
 
+#include "config.hpp"
+
+#include "util.hpp"
 #include "worker.hpp"
-#include <runtime/runtime.hpp>
 #include "ready_operation.hpp"
+
+#include <runtime/runtime.hpp>
+
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+#include <cds/gc/hp.h>
+#endif
 
 using namespace simple_backend;
 
-Worker::Worker(Worker&& other) noexcept
+Worker::Worker(Worker&& other)
   : ready_tasks_(std::move(other.ready_tasks_)),
     ready_tasks_non_stealable_(std::move(other.ready_tasks_non_stealable_)),
     id(other.id),
@@ -61,6 +69,12 @@ Worker::Worker(Worker&& other) noexcept
 void Worker::spawn_work_loop(int threads_per_partition) {
 
   thread_ = std::make_unique<std::thread>([this, threads_per_partition]{
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+    cds::threading::Manager::attachThread();
+    auto _detacher = make_on_destruction_invoker([]{
+      cds::threading::Manager::attachThread();
+    });
+#endif
     run_work_loop(threads_per_partition);
   });
 

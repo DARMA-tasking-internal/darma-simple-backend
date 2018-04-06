@@ -46,19 +46,25 @@
 #if _darma_has_feature(mpi_interop)
 #include <darma/interface/app/darma_region.h> // darma_initialize
 #include <darma/impl/mpi/mpi_context.h>
+#include <darma/impl/mpi/piecewise_acquired_collection.h>
+#include <darma/interface/app/keyword_arguments/all_keyword_arguments.h>
 
 using namespace darma;
 using namespace darma::experimental;
+using namespace darma::_keyword_arguments_;
+namespace kw = darma::keyword_arguments_for_piecewise_handle;
+namespace kwm = darma::keyword_arguments_for_mpi_context;
 
 // For mockup purposes
 #define MPI_COMM_WORLD 0
 
 struct DotProduct {
   void operator()(
-    ConcurrentContext<Range1D<int>> ctxt,
+    ConcurrentContext<Index1D<int>> ctxt,
     AccessHandleCollection<std::vector<double>, Range1D<int>> data_c,
     AccessHandleCollection<double, Range1D<int>> result_c
   ) {
+    std::printf("running collection index %d\n", ctxt.index().value);
     auto data_h = data_c[ctxt.index()].local_access();
     auto result_h = result_c[ctxt.index()].local_access();
     *result_h = 0;
@@ -78,7 +84,7 @@ int main(int argc, char** argv) {
   //MPI_Init(&argc, &argv);
   int rank = 0;
   //MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  int size = 1;
+  int mpi_size = 1;
   //MPI_Comm_size(MPI_COMM_WORLD, &size);
 
   std::vector<double> my_data;
@@ -88,14 +94,14 @@ int main(int argc, char** argv) {
   auto darma_context = darma::mpi_context(MPI_COMM_WORLD);
 
   auto my_data_handle = darma_context.template piecewise_acquired_collection<double>(
-    "my_data", size=size*overdecomp
+    "my_data", kwm::size=mpi_size*overdecomp
   );
   for(int i = 0; i < overdecomp; ++i) {
-    my_data_handle.acquire_access(my_data[i], index=rank*overdecomp+i);
+    my_data_handle.acquire_access(my_data[i], kw::index=rank*overdecomp+i);
   }
 
   auto darma_data = darma_context.template persistent_collection<std::vector<double>>(
-    "darma_data", size=size*overdecomp
+    "darma_data", kwm::size=mpi_size*overdecomp
   );
 
 
@@ -103,11 +109,15 @@ int main(int argc, char** argv) {
     if(rank == 0) {
       darma_context.run_distributed_region_blocking([&]{
 
+        std::printf("running iter %d\n", i);
+
         create_concurrent_work<DotProduct>(
-          darma_data.collecction(),
+          darma_data.collection(),
           my_data_handle.collection(),
-          index_range=Range1D<int>(size*overdecomp)
+          _index_range_=Range1D<int>(mpi_size*overdecomp)
         );
+
+        std::printf("exiting iter %d\n", i);
 
       });
     }

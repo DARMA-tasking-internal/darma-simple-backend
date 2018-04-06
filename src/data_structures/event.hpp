@@ -76,6 +76,8 @@ class Event {
       actions->consume_all([&](std::unique_ptr<ActionBase>&& action) {
         action->run();
       });
+      // actions in the queue may delete this, so the only thing you can do here
+      // is return or interact with stack data
     }
 
   public:
