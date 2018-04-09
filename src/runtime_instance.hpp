@@ -59,7 +59,7 @@ namespace backend {
 
 types::runtime_instance_token_t
 initialize_runtime_instance() {
-  return new simple_backend::Runtime();
+  return std::make_shared<simple_backend::Runtime>();
 }
 
 void
@@ -75,7 +75,7 @@ with_active_runtime_instance(
   types::runtime_instance_token_t& token,
   std::function<void()> callback
 ) {
-  simple_backend::Runtime::instance = std::unique_ptr<simple_backend::Runtime>(token);
+  simple_backend::Runtime::instance = token;
 
   token->shutdown_counter.attach_action([token]{
     token->workers[0].enqueue_ready_operation(
@@ -112,7 +112,9 @@ with_active_runtime_instance(
   simple_backend::Runtime::instance->spin_up_worker_threads();
   simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
 
-  token = new simple_backend::Runtime();
+  simple_backend::Runtime::instance = nullptr;
+
+  token = std::make_shared<simple_backend::Runtime>();
 }
 
 void initialize_runtime_arguments(int& argc, char**& argv) {

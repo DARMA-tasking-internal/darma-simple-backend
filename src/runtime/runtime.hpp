@@ -238,7 +238,8 @@ class Runtime
     // Maximum concurrency
     size_t nthreads_;
 
-    static std::unique_ptr<Runtime> instance;
+    static std::shared_ptr<Runtime> instance;
+
     static thread_local darma_runtime::abstract::frontend::Task* running_task;
     static thread_local int this_worker_id;
     static thread_local int thread_stack_depth;

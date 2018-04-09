@@ -71,7 +71,7 @@
 
 using namespace simple_backend;
 
-std::unique_ptr<Runtime> Runtime::instance = nullptr;
+std::shared_ptr<Runtime> Runtime::instance = nullptr;
 
 SimpleBackendOptions Runtime::default_options_ = { };
 
@@ -380,6 +380,14 @@ register_piecewise_collection(
   return rv;
 }
 
+void
+release_piecewise_collection(
+  types::runtime_context_token_t ctxt,
+  types::piecewise_collection_token_t token
+) {
+  token = nullptr;
+}
+
 types::persistent_collection_token_t
 register_persistent_collection(
   types::runtime_context_token_t ctxt,
@@ -392,6 +400,16 @@ register_persistent_collection(
   );
   ctxt->persistent_handles[handle->get_key()] = rv;
   return rv;
+}
+
+void
+release_persistent_collection(
+  types::runtime_context_token_t ctxt,
+  types::persistent_collection_token_t token,
+  darma_runtime::abstract::frontend::UsePendingRelease* use
+) {
+  ctxt->release_use(use);
+  token = nullptr;
 }
 
 void
@@ -408,7 +426,7 @@ register_piecewise_collection_piece(
 
 bool
 runtime_context_is_active_locally(types::runtime_context_token_t ctxt) {
-  return simple_backend::Runtime::instance.get() == ctxt;
+  return simple_backend::Runtime::instance.get() == ctxt.get();
 }
 
 void
@@ -417,7 +435,7 @@ run_distributed_region(
   std::function<void()> run_this
 ) {
   assert(not simple_backend::Runtime::instance);
-  simple_backend::Runtime::instance.reset(ctxt);
+  simple_backend::Runtime::instance = ctxt;
 
   simple_backend::Runtime::instance->distributed_region_running_task =
     darma_runtime::frontend::make_empty_running_task();
@@ -435,9 +453,10 @@ run_distributed_region(
 
   ctxt->spin_up_worker_threads();
   Runtime::wait_for_top_level_instance_to_shut_down();
-  simple_backend::Runtime::instance.reset();
+  simple_backend::Runtime::instance = nullptr;
   std::atomic_thread_fence(std::memory_order_seq_cst);
-  new (ctxt) simple_backend::Runtime();
+  ctxt->simple_backend::Runtime::~Runtime();
+  new (ctxt.get()) simple_backend::Runtime();
 }
 
 void
@@ -446,11 +465,11 @@ run_distributed_region_worker(types::runtime_context_token_t ctxt) {
 }
 
 types::runtime_context_token_t create_runtime_context(types::MPI_Comm) {
-  return new simple_backend::Runtime();
+  return std::make_shared<simple_backend::Runtime>();
 }
 
 void destroy_runtime_context(types::runtime_context_token_t ctxt) {
-  delete ctxt;
+  ctxt = nullptr;
 }
 
 } // end namespace backend

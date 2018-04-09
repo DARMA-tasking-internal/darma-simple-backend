@@ -63,11 +63,11 @@ using resource_pack_t = int; // not used for now, but not feature-tag protected 
 
 using task_collection_token_t = std::shared_ptr<simple_backend::TaskCollectionToken>;
 
-using runtime_instance_token_t = simple_backend::Runtime*;
-
 using piecewise_collection_token_t = std::shared_ptr<simple_backend::CollectionControlBlock>;
 
 using persistent_collection_token_t = std::shared_ptr<simple_backend::CollectionControlBlock>;
+
+using runtime_instance_token_t = std::shared_ptr<simple_backend::Runtime>;
 
 using runtime_context_token_t = runtime_instance_token_t;
 
