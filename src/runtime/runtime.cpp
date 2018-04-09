@@ -405,10 +405,11 @@ register_persistent_collection(
 void
 release_persistent_collection(
   types::runtime_context_token_t ctxt,
-  types::persistent_collection_token_t token,
-  darma_runtime::abstract::frontend::UsePendingRelease* use
+  types::persistent_collection_token_t token
 ) {
-  ctxt->release_use(use);
+  //simple_backend::Runtime::instance = ctxt;
+  //ctxt->release_use(use);
+  //simple_backend::Runtime::instance = nullptr;
   token = nullptr;
 }
 
@@ -418,8 +419,8 @@ register_piecewise_collection_piece(
   types::piecewise_collection_token_t piece_token,
   size_t index,
   void* data,
-  std::function<void(void const*, void*)> copy_out = nullptr,
-  std::function<void(void const*, void*)> copy_in = nullptr
+  std::function<void(void const*, void*)> copy_out,
+  std::function<void(void const*, void*)> copy_in
 ) {
   piece_token->piecewise_collection_addresses[index] = reinterpret_cast<char*>(data);
 }
