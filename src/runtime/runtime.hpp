@@ -272,6 +272,10 @@ class Runtime
     static std::vector<boost::context::fcontext_t> kokkos_contexts;
     #endif
 
+    #ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+    static std::unique_ptr<cds::gc::DHP> gc_instance_;
+    #endif
+
     std::vector<Worker> workers;
 
     void spin_up_worker_threads();

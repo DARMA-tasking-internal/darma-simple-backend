@@ -50,70 +50,31 @@
 #include "runtime/runtime.hpp"
 #include "debug.hpp"
 
-#if SIMPLE_BACKEND_DEBUG
-
-#include <signal.h>
-#include <csignal>
-#include <unistd.h>
-
-
-extern "C" {
-void sig_usr2_handler(int signal) {
-  simple_backend::DebugWorker::instance->empty_queue_actions.emplace(
-    ::simple_backend::make_debug_action_ptr([](auto& state){
-      ::simple_backend::DebugState::print_state(state);
-    })
-  );
-}
-} // end extern "C"
-#endif
+#include <darma/interface/backend/darma_region.h>
 
 #ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
 #include <cds/init.h>
-#include <cds/gc/hp.h>
+#include <cds/gc/dhp.h>
 #endif
 
 int main(int argc, char** argv) {
 
-#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
-  cds::Initialize();
-  { // start scope for hazard pointer garbage collection singleton
-  cds::gc::HP hp_gc_;
-  // attach the main thread to the cds threading manager
-  cds::threading::Manager::attachThread();
-#endif
+  darma_runtime::backend::initialize_with_arguments(argc, argv);
 
 #if SIMPLE_BACKEND_USE_KOKKOS
   Kokkos::initialize(argc, argv);
 #endif
 
-#if SIMPLE_BACKEND_DEBUG
-
-  std::cout << "Running program with simple debug backend enabled.  Send signal SIGUSR2"
-    " to process " << std::to_string(getpid()) << " to introspect state." << std::endl;
-  std::signal(SIGUSR2, sig_usr2_handler);
-
-
-  simple_backend::DebugWorker::instance->spawn_work_loop();
-#endif
-
   simple_backend::Runtime::initialize_top_level_instance(argc, argv);
   simple_backend::Runtime::instance->spin_up_worker_threads();
   simple_backend::Runtime::wait_for_top_level_instance_to_shut_down();
-
-#if SIMPLE_BACKEND_DEBUG
-  simple_backend::DebugWorker::instance->actions.emplace(nullptr);
-  simple_backend::DebugWorker::instance->worker_thread->join();
-#endif
+  simple_backend::Runtime::instance = nullptr;
 
 #if SIMPLE_BACKEND_USE_KOKKOS
   Kokkos::finalize();
 #endif
 
-#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
-  } // end of start scope for hazard pointer garbage collection singleton
-  cds::Terminate();
-#endif
+  darma_runtime::backend::finalize();
 
 }
 

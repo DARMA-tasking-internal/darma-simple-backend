@@ -51,9 +51,15 @@
 
 #include <data_structures/queue.hpp>
 
-#include <cds/gc/hp.h>
-#include <cds/container/msqueue.h>
-#include <cds/container/optimistic_queue.h>
+#include <cds/gc/dhp.h>
+
+#ifdef DARMA_SIMPLE_BACKEND_LIBCDS_USE_MSQUEUE
+#  include <cds/container/msqueue.h>
+#endif
+
+#if defined(DARMA_SIMPLE_BACKEND_LIBCDS_USE_OPTIMISTIC_QUEUE)
+#  include <cds/container/optimistic_queue.h>
+#endif
 
 namespace simple_backend {
 namespace data_structures {
@@ -129,11 +135,15 @@ struct BasicLibCDSQueue
 };
 
 
+#if defined(DARMA_SIMPLE_BACKEND_LIBCDS_USE_MSQUEUE)
 template <typename T>
-using MSQueue = BasicLibCDSQueue<T, cds::container::MSQueue<cds::gc::HP, T>>;
+using MSQueue = BasicLibCDSQueue<T, cds::container::MSQueue<cds::gc::DHP, T>>;
+#endif
 
+#if defined(DARMA_SIMPLE_BACKEND_LIBCDS_USE_OPTIMISTIC_QUEUE)
 template <typename T>
-using OptimisticQueue = BasicLibCDSQueue<T, cds::container::OptimisticQueue<cds::gc::HP, T>>;
+using OptimisticQueue = BasicLibCDSQueue<T, cds::container::OptimisticQueue<cds::gc::DHP, T>>;
+#endif
 
 
 } // end namespace libcds_interface

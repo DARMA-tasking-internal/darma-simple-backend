@@ -49,10 +49,7 @@
 
 #include <memory>
 
-#include <data_structures/queue.hpp>
 #include "flow/aliasing_strategy_fwd.hpp"
-
-//#define SIMPLE_BACKEND_DISABLE_WORK_STEALING 1
 
 #ifndef SIMPLE_BACKEND_ENABLE_WORK_STEALING
 #  if !SIMPLE_BACKEND_DISABLE_WORK_STEALING
@@ -62,6 +59,15 @@
 #  endif
 #endif
 
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+#  if !defined(DARMA_SIMPLE_BACKEND_LIBCDS_USE_MSQUEUE) \
+        && !defined(DARMA_SIMPLE_BACKEND_LIBCDS_USE_OPTIMISTIC_QUEUE)
+#    define DARMA_SIMPLE_BACKEND_LIBCDS_USE_MSQUEUE 1
+#  endif
+#endif
+
+#include <data_structures/queue.hpp>
+
 namespace simple_backend {
 
 namespace types {
@@ -70,7 +76,12 @@ using aliasing_strategy_t = aliasing::WorkQueueAppendAliasingStrategy;
 
 #ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
 template <typename T>
-using thread_safe_queue_t = data_structures::libcds_interface::OptimisticQueue<T>;
+using thread_safe_queue_t =
+#  ifdef DARMA_SIMPLE_BACKEND_LIBCDS_USE_MSQUEUE
+  data_structures::libcds_interface::MSQueue<T>;
+#  elif defined(DARMA_SIMPLE_BACKEND_LIBCDS_USE_OPTIMISTIC_QUEUE)
+  data_structures::libcds_interface::OptimisticQueue<T>;
+#  endif
 #else
 template <typename... Args>
 using thread_safe_queue_t = data_structures::SingleLockThreadSafeQueue<Args...>;

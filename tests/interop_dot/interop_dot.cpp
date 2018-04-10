@@ -91,48 +91,55 @@ int main(int argc, char** argv) {
   my_data.resize(overdecomp);
   double my_data_sum = 0.0;
 
-  auto darma_context = darma::mpi_context(MPI_COMM_WORLD);
 
-  auto my_data_handle = darma_context.template piecewise_acquired_collection<double>(
-    "my_data", kwm::size=mpi_size*overdecomp
-  );
-  for(int i = 0; i < overdecomp; ++i) {
-    my_data_handle.acquire_access(my_data[i], kw::index=rank*overdecomp+i);
-  }
+  { // Scope for darma_context and friends
 
-  auto darma_data = darma_context.template persistent_collection<std::vector<double>>(
-    "darma_data", kwm::size=mpi_size*overdecomp
-  );
+    auto darma_context = darma::mpi_context(MPI_COMM_WORLD);
 
-
-  for(int i = 0; i < iters; ++i) {
-    if(rank == 0) {
-      darma_context.run_distributed_region_blocking([&]{
-
-        std::printf("running iter %d\n", i);
-
-        create_concurrent_work<DotProduct>(
-          darma_data.collection(),
-          my_data_handle.collection(),
-          _index_range_=Range1D<int>(mpi_size*overdecomp)
-        );
-
-        std::printf("exiting iter %d\n", i);
-
-      });
-    }
-    else {
-      darma_context.run_distributed_region_worker_blocking();
+    auto my_data_handle = darma_context.template piecewise_acquired_collection<double>(
+      "my_data", kwm::size=mpi_size*overdecomp
+    );
+    for(int i = 0; i < overdecomp; ++i) {
+      my_data_handle.acquire_access(my_data[i], kw::index=rank*overdecomp+i);
     }
 
-    double my_data_tmp = 0.0;
-    for(auto&& d : my_data) my_data_tmp += d;
-    //MPI_Allreduce(&my_data_tmp, &my_data_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    for(auto& d : my_data) {
-      d = my_data_tmp;
+    auto darma_data = darma_context.template persistent_collection<std::vector<double>>(
+      "darma_data", kwm::size=mpi_size*overdecomp
+    );
+
+
+    for(int i = 0; i < iters; ++i) {
+      if(rank == 0) {
+        darma_context.run_distributed_region_blocking([&]{
+
+          std::printf("running iter %d\n", i);
+
+          create_concurrent_work<DotProduct>(
+            darma_data.collection(),
+            my_data_handle.collection(),
+            _index_range_=Range1D<int>(mpi_size*overdecomp)
+          );
+
+          std::printf("exiting iter %d\n", i);
+
+        });
+      }
+      else {
+        darma_context.run_distributed_region_worker_blocking();
+      }
+
+      double my_data_tmp = 0.0;
+      for(auto&& d : my_data) my_data_tmp += d;
+      //MPI_Allreduce(&my_data_tmp, &my_data_sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+      for(auto& d : my_data) {
+        d = my_data_tmp;
+      }
+
     }
 
-  }
+  } // end of scope for darma_context and friends
+
+  darma_finalize();
 
   return 0;
 

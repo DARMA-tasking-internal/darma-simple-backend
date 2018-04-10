@@ -92,16 +92,23 @@ std::vector<boost::context::fcontext_t> Runtime::darma_contexts = {};
 std::vector<boost::context::fcontext_t> Runtime::kokkos_contexts = {};
 #endif
 
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+std::unique_ptr<cds::gc::DHP> Runtime::gc_instance_ = nullptr;
+#endif
+
 //==============================================================================
 
 void
 Runtime::initialize_top_level_instance(int argc, char** argv) {
 
-  SimpleBackendOptions options;
+  SimpleBackendOptions options = Runtime::default_options_;
 
-  auto top_level_task = darma_runtime::frontend::darma_top_level_setup(
-    options.parse_args(argc, argv)
-  );
+  std::vector<std::string> args;
+  for(int i = 0; i < argc; ++i) {
+    args.push_back(argv[i]);
+  }
+
+  auto top_level_task = darma_runtime::frontend::darma_top_level_setup(std::move(args));
 
   instance = std::make_unique<Runtime>(std::move(top_level_task), options);
 }

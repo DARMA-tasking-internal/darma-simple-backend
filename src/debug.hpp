@@ -59,6 +59,11 @@
 
 #include "flow/flow.hpp"
 
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+#include <cds/init.h>
+#include <cds/gc/hp.h>
+#endif
+
 namespace simple_backend {
 
 // Give pointers a "friendly name" for debugging by translating it into a base 26 string
@@ -281,7 +286,15 @@ struct DebugWorker {
 
   void spawn_work_loop() {
     worker_thread = std::make_unique<std::thread>([this]{
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+      // attach the main thread to the cds threading manager
+      cds::threading::Manager::attachThread();
+#endif
       run_work_loop();
+#ifdef DARMA_SIMPLE_BACKEND_HAS_LIBCDS
+      // attach the main thread to the cds threading manager
+      cds::threading::Manager::detachThread();
+#endif
     });
   }
 
