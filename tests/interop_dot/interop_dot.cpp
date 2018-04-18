@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
     }
 
     auto darma_data = darma_context.template persistent_collection<std::vector<double>>(
-      "darma_data", kwm::size=mpi_size*overdecomp
+      "darma_data", _index_range_=Range1D<int>(mpi_size*overdecomp)
     );
 
 

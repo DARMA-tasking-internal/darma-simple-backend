@@ -48,8 +48,13 @@
 #include <memory>
 
 #include "simple_backend_fwd.hpp"
+#include <config.generated.h>
 
 #include <darma/key/SSO_key_fwd.h>
+
+#ifdef DARMA_SIMPLE_BACKEND_HAS_MPI
+#include <mpi.h>
+#endif
 
 namespace darma_runtime {
 namespace types {
@@ -71,7 +76,11 @@ using runtime_instance_token_t = std::shared_ptr<simple_backend::Runtime>;
 
 using runtime_context_token_t = runtime_instance_token_t;
 
+#ifndef DARMA_SIMPLE_BACKEND_HAS_MPI
 using MPI_Comm = int; /* ignored */
+#else
+using MPI_Comm = ::MPI_Comm;
+#endif
 
 } // end namespace types
 } // end namespace darma_runtime

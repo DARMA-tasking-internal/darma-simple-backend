@@ -110,13 +110,23 @@ int main() {
   DARMA_SIMPLE_BACKEND_HAS_SHARED_MUTEX
 )
 
+check_cxx_source_compiles("
+#include <mpi.h>
+int main(int argc, char** argv) {
+  MPI_Init(&argc, &argv);
+  MPI_Finalize();
+}
+"
+  DARMA_SIMPLE_BACKEND_HAS_MPI
+)
+
 configure_file(
   config.generated.h.in
   ${CMAKE_CURRENT_BINARY_DIR}/config.generated.h
 )
 install (
   FILES ${CMAKE_CURRENT_BINARY_DIR}/config.generated.h
-  DESTINATION src
+  DESTINATION include
 )
 
 
