@@ -259,7 +259,7 @@ Runtime::spin_up_worker_threads()
 #if SIMPLE_BACKEND_USE_OPENMP
 #pragma omp parallel num_threads(nthreads_) proc_bind(spread)
   {
-    workers[omp_get_thread_num()].run_work_loop(nthreads_, 1);
+    workers[omp_get_thread_num()].run_work_loop(nthreads_);
   }
   // End omp region
 #elif SIMPLE_BACKEND_USE_KOKKOS

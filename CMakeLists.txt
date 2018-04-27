@@ -8,20 +8,10 @@ if (NOT darma_frontend_DIR)
   message(FATAL_ERROR "Must specify valid DARMA frontend installation root with -Ddarma_frontend_DIR=")
 endif()
 
-set(DARMA_FRONTEND_USER_OPTION ${darma_frontend_DIR})
-
 find_package(darma_frontend PATHS ${darma_frontend_DIR}/cmake)
 
-if(${darma_frontend_FOUND})
-else()
-  if(EXISTS ${DARMA_FRONTEND_USER_OPTION})
-    # Try source install
-    message("Using source of DARMA Frontend directly rather than installed package")
-    set(SIMPLE_BACKEND_USES_FRONTEND_SOURCE_DIRECTLY ON)
-    include_directories(${DARMA_FRONTEND_USER_OPTION}/src/include)
-  else()
-    message(FATAL_ERROR "Directory ${darma_frontend_DIR} does not exist")
-  endif()
+if(NOT darma_frontend_FOUND)
+  message(FATAL_ERROR "Directory ${darma_frontend_DIR} does not exist or does not contain valid DARMA frontend install")
 endif()
 
 # module include path
@@ -41,12 +31,7 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g")
 set (CMAKE_MACOSX_RPATH On)
 
 include(cmake/SetDarmaCompilerFlags.cmake)
-set_darma_compiler_flags()
 
-include_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${CMAKE_CURRENT_BINARY_DIR}/src
-)
 
 option(ENABLE_BACKEND_DEBUGGING "Whether to turn on debugging features for the backend itself" Off)
 
@@ -58,41 +43,6 @@ option(KOKKOS_PATH "Path to Kokkos installation (only used for BACKEND_USE_KOKKO
 option(FCONTEXT_ROOT "Path to fcontext (boost) installation (only used for BACKEND_USE_FCONTEXT)" "")
 option(SIMPLE_BACKEND_USE_LIBCDS "Whether or not to use LibCDS, if available, for concurrent data structures" OFF)
 
-
-if(ENABLE_BACKEND_DEBUGGING)
-    add_definitions(-DSIMPLE_BACKEND_DEBUG)
-endif()
-
-if (BOOST_ROOT)
-    include_directories(${BOOST_ROOT}/include)
-    add_definitions(-DSIMPLE_BACKEND_HAS_BOOST)
-endif()
-
-if(BACKEND_USE_OPENMP)
-    find_package(OpenMP REQUIRED)
-    add_definitions(-DSIMPLE_BACKEND_USE_OPENMP)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-else()
-    if(BACKEND_USE_KOKKOS)
-        if (NOT KOKKOS_PATH)
-          message(FATAL_ERROR "Need KOKKOS_PATH to be defined")
-        endif()
-        find_package(OpenMP REQUIRED)
-        include(${KOKKOS_PATH}/kokkos.cmake)
-        add_definitions(-DSIMPLE_BACKEND_USE_KOKKOS)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KOKKOS_CPPFLAGS} ${KOKKOS_CXXFLAGS}")
-        if(BACKEND_USE_FCONTEXT)
-            if (NOT FCONTEXT_ROOT)
-                message(FATAL_ERROR "Need FCONTEXT_ROOT to be defined")
-            endif()
-            add_definitions(-DSIMPLE_BACKEND_USE_FCONTEXT)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${FCONTEXT_ROOT}/include")
-        endif()
-    else()
-        find_package( Threads REQUIRED )
-    endif()
-endif()
-
 add_subdirectory(src)
 if(DARMA_SIMPLE_BACKEND_DISABLE_TESTS)
   message(STATUS "Not building simple_backend-specific tests")
@@ -100,23 +50,28 @@ else()
   add_subdirectory(tests)
 endif()
 
-if(BACKEND_USE_KOKKOS)
-    if(BACKEND_USE_FCONTEXT)
-        message(STATUS "Will link to fcontext library at ${FCONTEXT_ROOT}/lib")
-        set_target_properties(darma PROPERTIES
-            LINK_FLAGS "${KOKKOS_LIBS} ${KOKKOS_LDFLAGS} -L${FCONTEXT_ROOT}/lib -lboost_context"
-        )
-    else()
-        set_target_properties(darma PROPERTIES
-            LINK_FLAGS "${KOKKOS_LIBS} ${KOKKOS_LDFLAGS}")
-    endif()
+
+if(ENABLE_BACKEND_DEBUGGING)
+  target_compile_definitions(darma_interop PUBLIC -DSIMPLE_BACKEND_DEBUG)
 endif()
 
-target_include_directories(darma PUBLIC
+if (BOOST_ROOT)
+  target_include_directories(darma_interop ${BOOST_ROOT}/include)
+  target_compile_definitions(darma_interop PUBLIC -DSIMPLE_BACKEND_HAS_BOOST)
+endif()
+
+target_include_directories(darma_interop PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<INSTALL_INTERFACE:include>  # <prefix>/include/
 )
 
+target_include_directories(darma_interop PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/src>
+  $<INSTALL_INTERFACE:include>  # <prefix>/include/
+)
+
+set_darma_compiler_flags()
+target_compile_options(darma_interop PUBLIC ${DARMA_REQUIRED_CXX_FLAGS})
 
 install(
   EXPORT darma
@@ -126,9 +81,6 @@ install(
   EXPORT darma_interop
   DESTINATION cmake 
 )
-
-set(DARMA_BACKEND_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-set(DARMA_BACKEND_CXX_COMPILER "${CMAKE_CXX_COMPILER}")
 
 configure_file(
   cmake/darmaConfig.cmake.in

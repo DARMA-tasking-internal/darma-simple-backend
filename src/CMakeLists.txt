@@ -67,10 +67,38 @@ if(BACKEND_USE_FCONTEXT)
 endif()
 
 add_library(darma_interop SHARED ${library_sources} ${headers})
-if(DEFINED SIMPLE_BACKEND_USES_FRONTEND_SOURCE_DIRECTLY)
-  target_link_libraries(darma_interop PUBLIC ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(darma_interop PUBLIC ${CMAKE_THREAD_LIBS_INIT} darma_frontend)
+
+if(BACKEND_USE_OPENMP)
+  find_package(OpenMP REQUIRED)
+  target_compile_definitions(darma_interop PUBLIC -DSIMPLE_BACKEND_USE_OPENMP)
+  target_link_libraries(darma_interop PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
+if(BACKEND_USE_KOKKOS)
+  if (NOT KOKKOS_PATH)
+    message(FATAL_ERROR "Need KOKKOS_PATH to be defined")
+  endif()
+  find_package(OpenMP REQUIRED)
+  include(${KOKKOS_PATH}/kokkos.cmake)
+  target_compile_definitions(darma_interop -DSIMPLE_BACKEND_USE_KOKKOS)
+  target_compile_definitions(darma_interop ${KOKKOS_CPPFLAGS})
+  target_compile_options(darma_interop ${KOKKOS_CXXFLAGS})
+  set_target_properties(darma PROPERTIES
+    LINK_FLAGS "${KOKKOS_LIBS} ${KOKKOS_LDFLAGS}"
+  )
+  if(BACKEND_USE_FCONTEXT)
+    if (NOT FCONTEXT_ROOT)
+        message(FATAL_ERROR "Need FCONTEXT_ROOT to be defined")
+    endif()
+    set_target_properties(darma PROPERTIES APPEND_STRING
+        LINK_FLAGS " -L${FCONTEXT_ROOT}/lib -lboost_context"
+    )
+    target_compile_definitions(darma_interop -DSIMPLE_BACKEND_USE_FCONTEXT)
+    target_include_directories(darma_interop PUBLIC ${FCONTEXT_ROOT}/include)
+  endif()
 else()
-  target_link_libraries(darma_interop PUBLIC ${CMAKE_THREAD_LIBS_INIT} darma_frontend)
+  find_package( Threads REQUIRED )
 endif()
 
 if(SIMPLE_BACKEND_USE_LIBCDS)
